@@ -194,7 +194,7 @@ const PHASE2_ENEMY_TYPES = [
 const state = {
   screen: 'menu', // 'menu' | 'online' | 'phase1' | 'transition' | 'phase2' | 'batatinha' | 'victory'
   mode: 'local',  // 'local' | 'host' | 'guest'
-  groomName: 'Prof. Noivo',
+  groomName: 'Joao Costenaro',
   brideName: 'Noiva',
 
   width: 960,
@@ -288,7 +288,7 @@ resizeCanvas();
 function syncCoupleNamesFromInputs() {
   const g = (inputGroom.value || '').trim();
   const b = (inputBride.value || '').trim();
-  state.groomName = g || 'Prof. Noivo';
+  state.groomName = g || 'Joao Costenaro';
   state.brideName = b || 'Noiva';
 
   previewGroomNames.forEach((el) => { el.textContent = state.groomName; });
