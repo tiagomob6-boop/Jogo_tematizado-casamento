@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Operação Lua de Mel 💍 | O Jogo Oficial do Casamento</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+  <!-- PeerJS CDN para Multiplayer P2P WebRTC -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+  <div id="app-container">
+    <!-- Barra Superior / HUD -->
+    <header id="hud-bar" class="hidden">
+      <div class="hud-left">
+        <span id="hud-phase-badge" class="badge">FASE 1</span>
+        <span id="hud-mode-badge" class="badge badge-mode">LOCAL</span>
+      </div>
+
+      <div class="hud-center">
+        <!-- Barra de progresso da Fase 1 -->
+        <div id="hud-progress-container" class="progress-wrapper">
+          <span class="progress-icon">🏃‍♂️🏃‍♀️</span>
+          <div class="progress-track">
+            <div id="hud-progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="hud-progress-text" class="progress-label">0% ⛪</span>
+        </div>
+
+        <!-- Cronômetro da Fase 2 -->
+        <div id="hud-timer-container" class="timer-wrapper hidden">
+          <span class="timer-icon">🎂</span>
+          <span id="hud-timer-text">45.0s</span>
+          <span class="timer-sub">PROTEJAM O BOLO!</span>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <button id="btn-back-menu" class="icon-btn" title="Voltar ao Menu" aria-label="Menu">🏠</button>
+        <button id="btn-mute" class="icon-btn" title="Ativar/Desativar Som" aria-label="Som">🔊</button>
+      </div>
+    </header>
+
+    <!-- Botão de Som Flutuante no Menu -->
+    <button id="btn-mute-floating" class="icon-btn floating-mute" title="Ativar/Desativar Som">🔊</button>
+
+    <!-- Canvas Principal do Jogo -->
+    <div id="canvas-wrapper">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Áreas de Toque Demarcadas (Mobile / Touch) -->
+      <div id="touch-overlay" class="hidden">
+        <!-- Metade Esquerda: Noivo -->
+        <div id="touch-zone-left" class="touch-zone touch-left">
+          <div class="touch-header">
+            <span class="touch-avatar">🤵</span>
+            <span id="touch-name-p1" class="touch-name">Prof. Noivo</span>
+          </div>
+          <!-- Controles Fase 1 (Pular / Abaixar) -->
+          <div class="touch-dpad phase1-prompt">
+            <button type="button" class="dpad-btn phase1-btn" data-player="p1" data-p1action="jump">⬆️ PULAR</button>
+            <button type="button" class="dpad-btn phase1-btn btn-duck" data-player="p1" data-p1action="duck">⬇️ ABAIXAR</button>
+          </div>
+          <!-- Controles Fase 2 -->
+          <div class="touch-dpad phase2-prompt hidden">
+            <button type="button" class="dpad-btn" data-player="p1" data-dir="-1">⬅️ GIRO</button>
+            <button type="button" class="dpad-btn dpad-burst" data-player="p1" data-action="burst">💐</button>
+            <button type="button" class="dpad-btn" data-player="p1" data-dir="1">GIRO ➡️</button>
+          </div>
+        </div>
+
+        <!-- Metade Direita: Noiva -->
+        <div id="touch-zone-right" class="touch-zone touch-right">
+          <div class="touch-header">
+            <span class="touch-avatar">👰</span>
+            <span id="touch-name-p2" class="touch-name">Noiva</span>
+          </div>
+          <!-- Controles Fase 1 (Pular / Abaixar) -->
+          <div class="touch-dpad phase1-prompt">
+            <button type="button" class="dpad-btn phase1-btn" data-player="p2" data-p1action="jump">⬆️ PULAR</button>
+            <button type="button" class="dpad-btn phase1-btn btn-duck" data-player="p2" data-p1action="duck">⬇️ ABAIXAR</button>
+          </div>
+          <!-- Controles Fase 2 -->
+          <div class="touch-dpad phase2-prompt hidden">
+            <button type="button" class="dpad-btn" data-player="p2" data-dir="-1">⬅️ GIRO</button>
+            <button type="button" class="dpad-btn dpad-burst" data-player="p2" data-action="burst">💐</button>
+            <button type="button" class="dpad-btn" data-player="p2" data-dir="1">GIRO ➡️</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         TELA 1: MENU INICIAL & LOBBY
+    =========================================== -->
+    <section id="screen-menu" class="overlay-screen active">
+      <div class="card menu-card">
+        <div class="crown-badge">💍 EDIÇÃO ESPECIAL DE CASAMENTO 🎓</div>
+        <h1 class="game-title">OPERAÇÃO<br/><span>LUA DE MEL</span></h1>
+        <p class="game-subtitle">
+          "Porque na lua de mel vocês com certeza não têm nada melhor para fazer..."
+        </p>
+
+        <!-- Personalização dos Nomes -->
+        <div class="names-box">
+          <div class="input-group">
+            <label for="input-groom">🤵 Nome do Noivo (Prof.):</label>
+            <input type="text" id="input-groom" maxlength="16" placeholder="Prof. Noivo" value="Prof. Noivo" />
+          </div>
+          <div class="heart-divider">❤️</div>
+          <div class="input-group">
+            <label for="input-bride">👰 Nome da Noiva:</label>
+            <input type="text" id="input-bride" maxlength="16" placeholder="Noiva" value="Noiva" />
+          </div>
+        </div>
+
+        <!-- Botões de Modo de Jogo -->
+        <div class="mode-buttons">
+          <button id="btn-play-local" class="btn btn-primary btn-large">
+            <span class="btn-icon">🕹️</span>
+            <div class="btn-text">
+              <strong>Jogar no Mesmo Aparelho</strong>
+              <small>PC (Teclado Dividido) ou Celular (Tela Dividida)</small>
+            </div>
+          </button>
+
+          <button id="btn-open-online" class="btn btn-secondary btn-large">
+            <span class="btn-icon">🌐</span>
+            <div class="btn-text">
+              <strong>Jogar em 2 Aparelhos (Online P2P)</strong>
+              <small>Criar ou Entrar na Sala com código de 4 letras</small>
+            </div>
+          </button>
+        </div>
+
+        <!-- Resumo de Controles -->
+        <div class="controls-preview">
+          <div class="ctrl-col">
+            <h4>🤵 <span class="preview-groom-name">Prof. Noivo</span></h4>
+            <p><strong>Fase 1:</strong> <kbd>W</kbd> Pular | <kbd>S</kbd> Abaixar</p>
+            <p><strong>Fase 2:</strong> <kbd>A</kbd> <kbd>D</kbd> Girar | <kbd>W</kbd> Buquê</p>
+          </div>
+          <div class="ctrl-col">
+            <h4>👰 <span class="preview-bride-name">Noiva</span></h4>
+            <p><strong>Fase 1:</strong> <kbd>⬆️</kbd>/<kbd>Espaço</kbd> Pular | <kbd>⬇️</kbd> Abaixar</p>
+            <p><strong>Fase 2:</strong> <kbd>⬅️</kbd> <kbd>➡️</kbd> Girar | <kbd>⬆️</kbd> Buquê</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TELA 2: LOBBY MULTIPLAYER ONLINE (PEERJS)
+    =========================================== -->
+    <section id="screen-online" class="overlay-screen hidden">
+      <div class="card lobby-card">
+        <h2>🌐 Multiplayer em 2 Aparelhos</h2>
+        <p class="lobby-desc">Cada um joga no seu celular ou PC em tempo real!</p>
+
+        <div class="lobby-tabs">
+          <!-- Coluna Criar Sala (Host / Noivo) -->
+          <div class="lobby-panel">
+            <h3>🤵 Jogador 1 (Criar Sala)</h3>
+            <p>Gere o código da sala e passe para o seu par:</p>
+            <button id="btn-create-room" class="btn btn-primary">Criar Sala do Casal</button>
+
+            <div id="host-room-info" class="room-code-box hidden">
+              <span class="room-label">CÓDIGO DA SALA:</span>
+              <div id="display-room-code" class="room-code-digits">----</div>
+              <p id="host-status-text" class="status-pill waiting">⏳ Aguardando o par entrar...</p>
+            </div>
+          </div>
+
+          <div class="lobby-or">OU</div>
+
+          <!-- Coluna Entrar na Sala (Guest / Noiva) -->
+          <div class="lobby-panel">
+            <h3>👰 Jogador 2 (Entrar na Sala)</h3>
+            <p>Digite o código de 4 letras do Jogador 1:</p>
+            <div class="join-form">
+              <input
+                type="text"
+                id="input-room-code"
+                maxlength="4"
+                placeholder="AMOR"
+                autocomplete="off"
+                autocapitalize="characters"
+              />
+              <button id="btn-join-room" class="btn btn-accent">Entrar 💍</button>
+            </div>
+            <p id="guest-status-text" class="status-pill hidden"></p>
+          </div>
+        </div>
+
+        <div class="lobby-footer">
+          <button id="btn-cancel-online" class="btn btn-outline">⬅️ Voltar ao Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TELA 3: TRANSIÇÃO ENTRE FASES
+    =========================================== -->
+    <section id="screen-transition" class="overlay-screen hidden">
+      <div class="card transition-card">
+        <div class="big-emoji">💒🎉🥂</div>
+        <h2>RECÉM-CASADOS!</h2>
+        <p class="transition-lead">Vocês sobreviveram aos boletos e às provas até o altar!</p>
+        <div class="transition-alert">
+          <h3>⚠️ AGORA COMEÇA A FESTA...</h3>
+          <p>
+            Os convidados estão famintos e querem atacar o <strong>Bolo de 3 Andares</strong> antes das fotos!
+            Girem ao redor da mesa (<kbd>A</kbd>/<kbd>D</kbd> e <kbd>⬅️</kbd>/<kbd>➡️</kbd>) para espantar todo mundo por <strong>45 segundos</strong>!
+          </p>
+        </div>
+        <div id="transition-countdown" class="countdown-pill">Iniciando Fase 2 em 4...</div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TELA 4: DERROTA CRÍTICA ("BATATINHA!")
+    =========================================== -->
+    <section id="screen-batatinha" class="overlay-screen hidden">
+      <div class="card batatinha-card">
+        <div class="potato-icon">🥔💥😱</div>
+        <h1 class="batatinha-title">BATATINHA!</h1>
+        <p id="batatinha-reason" class="batatinha-quote">
+          "A pilha de provas venceu a lua de mel!"
+        </p>
+        <div id="batatinha-detail" class="batatinha-sub">
+          Fase 1 • Corrida para o Altar
+        </div>
+
+        <div class="batatinha-actions">
+          <button id="btn-continue-phase" class="btn btn-accent btn-giant hidden">
+            🎂 Continuar na Fase 2
+          </button>
+          <button id="btn-retry" class="btn btn-danger btn-giant">
+            🔄 Tentar Novamente
+          </button>
+          <button id="btn-batatinha-menu" class="btn btn-outline">
+            🏠 Menu Principal
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TELA 5: VITÓRIA ÉPICA FINAL
+    =========================================== -->
+    <section id="screen-victory" class="overlay-screen hidden">
+      <div class="card victory-card">
+        <div class="victory-emojis">🎊👰🤵🎂🥂🏝️</div>
+        <h1 class="victory-title">SOBREVIVERAM!</h1>
+        <p class="victory-subtitle">
+          Agora vão aproveitar a lua de mel<br/>
+          <strong>(larguem o celular)!</strong>
+        </p>
+
+        <div class="victory-stats">
+          <p id="victory-couple-names">Parabéns, Prof. Noivo &amp; Noiva!</p>
+          <p class="victory-irony">
+            ✅ Boletos desviados com sucesso<br/>
+            ✅ Pilhas de provas ignoradas até segunda-feira<br/>
+            ✅ Bolo de casamento 100% salvo dos primos furões!
+          </p>
+        </div>
+
+        <div class="victory-actions">
+          <button id="btn-play-again" class="btn btn-primary btn-giant">
+            🎮 Jogar Novamente
+          </button>
+          <button id="btn-victory-menu" class="btn btn-outline">
+            🏠 Voltar ao Início
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Scripts Modulares ES6 -->
+  <script type="module" src="game.js"></script>
+</body>
+</html>
