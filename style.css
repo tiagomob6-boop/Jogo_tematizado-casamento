@@ -873,6 +873,86 @@ kbd {
 }
 
 /* ==========================================
+   TELA 6: MENU HUB DE 11 MINIGAMES
+=========================================== */
+.minigames-hub-card {
+  max-width: 900px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-title {
+  font-family: var(--font-arcade);
+  font-size: clamp(1.1rem, 3vw, 1.65rem);
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.hub-subtitle {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.minigames-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  padding: 6px 4px;
+  margin-bottom: 14px;
+  max-height: 58vh;
+}
+
+.mg-item-btn {
+  background: rgba(18, 9, 36, 0.85);
+  border: 2px solid rgba(255, 209, 102, 0.45);
+  border-radius: 14px;
+  padding: 11px 13px;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  transition: transform 0.12s, border-color 0.15s, background 0.15s;
+}
+
+.mg-item-btn:hover {
+  border-color: var(--gold);
+  background: rgba(65, 32, 115, 0.88);
+  transform: translateY(-2px);
+}
+
+.mg-item-icon {
+  font-size: 1.85rem;
+  flex-shrink: 0;
+}
+
+.mg-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mg-item-info strong {
+  font-size: 0.88rem;
+  color: var(--gold);
+}
+
+.mg-item-info small {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+.hub-footer {
+  display: flex;
+  justify-content: center;
+}
+
+/* ==========================================
    RESPONSIVIDADE MOBILE
 =========================================== */
 @media (max-width: 700px) {

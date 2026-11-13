@@ -86,7 +86,7 @@ export class NetworkManager {
   }
 
   joinRoom(rawCode) {
-    const cleanCode = (rawCode || '').trim().toUpperCase().slice(0, 4);
+    const cleanCode = (rawCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
     if (cleanCode.length !== 4) {
       if (this.onError) this.onError('Digite um código válido de 4 caracteres (ex: AMOR).');
       return;
@@ -103,13 +103,28 @@ export class NetworkManager {
 
     this.peer = new window.Peer({ debug: 1 });
 
+    let connTimeout = null;
+
     this.peer.on('open', () => {
       const targetId = PEER_PREFIX + this.roomCode;
       this.conn = this.peer.connect(targetId, { reliable: true });
-      this.setupConnectionEvents();
+
+      connTimeout = setTimeout(() => {
+        if (!this.connected && this.role === 'guest') {
+          if (this.onError) {
+            this.onError(`Tempo esgotado ao buscar a sala "${this.roomCode}". Verifique se o código está correto e se o Noivo já criou a sala.`);
+          }
+          this.disconnect();
+        }
+      }, 12000);
+
+      this.setupConnectionEvents(() => {
+        if (connTimeout) clearTimeout(connTimeout);
+      });
     });
 
     this.peer.on('error', (err) => {
+      if (connTimeout) clearTimeout(connTimeout);
       let msg = 'Não foi possível encontrar a sala ' + this.roomCode + '.';
       if (err && err.type === 'peer-unavailable') {
         msg = `Sala "${this.roomCode}" não encontrada! Confira o código com o Jogador 1.`;
@@ -118,11 +133,12 @@ export class NetworkManager {
     });
   }
 
-  setupConnectionEvents() {
+  setupConnectionEvents(onOpenCallback) {
     if (!this.conn) return;
 
     this.conn.on('open', () => {
       this.connected = true;
+      if (onOpenCallback) onOpenCallback();
       if (this.onConnected) this.onConnected(this.role, this.roomCode);
     });
 

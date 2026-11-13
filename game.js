@@ -5,7 +5,7 @@
 
 import { SoundManager } from './audio.js';
 import { NetworkManager } from './network.js';
-import { MinigameProgression } from './minigames.js';
+import { MinigameProgression, HONEYMOON_MINIGAMES } from './minigames.js';
 
 const sfx = new SoundManager();
 const net = new NetworkManager();
@@ -38,6 +38,8 @@ const screenOnline = document.getElementById('screen-online');
 const screenTransition = document.getElementById('screen-transition');
 const screenBatatinha = document.getElementById('screen-batatinha');
 const screenVictory = document.getElementById('screen-victory');
+const screenMinigames = document.getElementById('screen-minigames');
+const minigamesGrid = document.getElementById('minigames-grid');
 
 // Inputs de Nomes
 const inputGroom = document.getElementById('input-groom');
@@ -206,13 +208,18 @@ const state = {
 
   // Controles ativos
   keys: {
-    p1Jump: false,
-    p2Jump: false,
+    p1Up: false,
+    p1Down: false,
     p1Left: false,
     p1Right: false,
+    p1Jump: false,
+    p2Up: false,
+    p2Down: false,
     p2Left: false,
-    p2Right: false
+    p2Right: false,
+    p2Jump: false
   },
+  mgState: {},
 
   // Dados da Fase 1 (Corrida para o Altar)
   phase1: {
@@ -272,14 +279,27 @@ const state = {
 // INICIALIZAÇÃO DE TELAS, EVENTOS E RESPONSIVIDADE
 // ============================================================================
 
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function resizeCanvas() {
-  const rect = canvas.parentElement.getBoundingClientRect();
+  const parent = canvas ? (canvas.parentElement || canvas) : null;
+  const rect = parent ? parent.getBoundingClientRect() : { width: window.innerWidth || 800, height: window.innerHeight || 600 };
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  state.width = Math.max(320, rect.width);
-  state.height = Math.max(320, rect.height);
+  state.width = Math.max(320, rect.width || 800);
+  state.height = Math.max(320, rect.height || 600);
   canvas.width = Math.floor(state.width * dpr);
   canvas.height = Math.floor(state.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (ctx && ctx.setTransform) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -301,8 +321,8 @@ inputGroom.addEventListener('input', syncCoupleNamesFromInputs);
 inputBride.addEventListener('input', syncCoupleNamesFromInputs);
 
 function showOverlayScreen(screenName) {
-  [screenMenu, screenOnline, screenTransition, screenBatatinha, screenVictory].forEach((el) => {
-    el.classList.add('hidden');
+  [screenMenu, screenOnline, screenTransition, screenBatatinha, screenVictory, screenMinigames].forEach((el) => {
+    if (el) el.classList.add('hidden');
   });
 
   const floatingMute = document.getElementById('btn-mute-floating');
@@ -329,10 +349,19 @@ function showOverlayScreen(screenName) {
     screenVictory.classList.remove('hidden');
     touchOverlay.classList.add('hidden');
     floatingMute.classList.add('hidden');
+  } else if (screenName === 'minigames') {
+    if (screenMinigames) screenMinigames.classList.remove('hidden');
+    hudBar.classList.add('hidden');
+    touchOverlay.classList.add('hidden');
+    floatingMute.classList.remove('hidden');
   } else {
-    // Jogando Fase 1 ou Fase 2
+    // Jogando Fase 1, Fase 2 ou Minigames
     hudBar.classList.remove('hidden');
-    touchOverlay.classList.remove('hidden');
+    if (progression.activeMinigame) {
+      touchOverlay.classList.add('hidden');
+    } else {
+      touchOverlay.classList.remove('hidden');
+    }
     floatingMute.classList.add('hidden');
   }
 }
@@ -412,28 +441,114 @@ function spawnConfettiBurst(count = 70) {
 // FLUXO DAS FASES: INICIAR FASE 1, TRANSIÇÃO, FASE 2, BATATINHA E VITÓRIA
 // ============================================================================
 
+const ctxApi = {
+  getViewport: () => ({ width: state.width, height: state.height }),
+  getKeys: () => state.keys,
+  getNames: () => ({ groom: state.groomName, bride: state.brideName }),
+  getTime: () => state.time,
+  sfx,
+  particles: (x, y, color, count, spd) => spawnParticles(x, y, color, count, spd),
+  floatingText: (x, y, text, color) => spawnFloatingText(x, y, text, color),
+  confetti: (count) => spawnConfettiBurst(count),
+  drawGroom: (x, y, runCycle, scale, showLabel, isDucking) =>
+    drawGroomCharacter(x, y, runCycle, scale, showLabel, isDucking),
+  drawBride: (x, y, runCycle, scale, showLabel, isDucking) =>
+    drawBrideCharacter(x, y, runCycle, scale, showLabel, isDucking),
+  batatinha: (reason, culpritInfo) => triggerBatatinha(reason, 3, culpritInfo, false),
+  victory: (message) => triggerMinigameVictory(message, false),
+  get mgState() {
+    if (!state.mgState) state.mgState = {};
+    return state.mgState;
+  },
+  set mgState(val) {
+    state.mgState = val;
+  }
+};
+
+function openMinigamesHub() {
+  syncCoupleNamesFromInputs();
+  state.screen = 'minigames';
+  renderMinigamesGrid();
+  showOverlayScreen('minigames');
+  sfx.playClick();
+}
+
+function renderMinigamesGrid() {
+  if (!minigamesGrid) return;
+  minigamesGrid.innerHTML = '';
+
+  HONEYMOON_MINIGAMES.forEach((mg) => {
+    const isCompleted = progression.completedMinigames.has(mg.id);
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'mg-item-btn';
+    if (isCompleted) {
+      item.style.borderColor = '#06d6a0';
+    }
+    item.innerHTML = `
+      <div class="mg-item-icon">${mg.icon}</div>
+      <div class="mg-item-info">
+        <strong>${mg.title} ${isCompleted ? '✅' : ''}</strong>
+        <small>${mg.subtitle}</small>
+      </div>
+    `;
+
+    item.addEventListener('click', () => {
+      sfx.playClick();
+      if (state.mode === 'guest') {
+        net.send({ type: 'request_start_stage', stageId: mg.id });
+      } else {
+        startStageById(mg.id, false);
+      }
+    });
+
+    minigamesGrid.appendChild(item);
+  });
+}
+
 function startStageById(stageId, fromNetwork = false) {
   const stage = progression.getStageById(stageId);
   if (stage.id === 'phase1') {
+    progression.activeMinigame = null;
     startPhase1(fromNetwork);
   } else if (stage.id === 'phase2') {
+    progression.activeMinigame = null;
     startPhase2(fromNetwork);
-  } else if (stage.enabled && stage.hooks && stage.hooks.onEnter) {
-    // Suporte estruturado para futuros minijogos cadastrados em minigames.js
-    progression.unlockStage(stage.id);
-    state.screen = stage.id;
-    state.freezeFrame = false;
-    state.culpritHighlight = null;
-    hudPhaseBadge.textContent = stage.title;
-    showOverlayScreen('playing');
-    stage.hooks.onEnter(state);
-    if (state.mode === 'host' && !fromNetwork) {
-      net.send({ type: 'start_custom_stage', stageId: stage.id });
+  } else {
+    const mg = progression.getMinigameModule(stageId);
+    if (mg) {
+      progression.unlockStage(stageId);
+      progression.activeMinigame = mg;
+      state.screen = stageId;
+      state.failedPhase = stage.order || 3;
+      state.freezeFrame = false;
+      state.culpritHighlight = null;
+      state.particles = [];
+      state.floatingTexts = [];
+      state.mgState = {};
+
+      hudPhaseBadge.textContent = mg.title;
+      hudModeBadge.textContent = state.mode === 'local' ? 'LOCAL' : `SALA: ${net.roomCode}`;
+      hudProgressContainer.classList.add('hidden');
+      hudTimerContainer.classList.add('hidden');
+
+      showOverlayScreen('playing');
+      touchOverlay.classList.add('hidden');
+
+      if (mg.onEnter) {
+        mg.onEnter(ctxApi);
+      }
+      sfx.playClick();
+
+      if (state.mode === 'host' && !fromNetwork) {
+        net.send({ type: 'start_custom_stage', stageId: stage.id });
+      }
     }
   }
 }
 
 function startPhase1(isResetFromNetwork = false) {
+  progression.activeMinigame = null;
   syncCoupleNamesFromInputs();
   progression.unlockStage('phase1');
   state.screen = 'phase1';
@@ -512,6 +627,7 @@ function startPhase2(fromNetwork = false) {
     transitionTimerId = null;
   }
 
+  progression.activeMinigame = null;
   progression.unlockStage('phase2');
   state.screen = 'phase2';
   state.failedPhase = 2;
@@ -563,27 +679,41 @@ function triggerBatatinha(customReason, phaseNum, culpritInfo = null, fromNetwor
   state.freezeFrame = true;
   state.culpritHighlight = culpritInfo;
 
+  const activeMg = progression.activeMinigame;
   const pool = phaseNum === 1 ? BATATINHA_QUOTES_PHASE1 : BATATINHA_QUOTES_PHASE2;
   const randomQuote = pool[Math.floor(Math.random() * pool.length)];
   const finalQuote = customReason || randomQuote;
 
   document.getElementById('batatinha-reason').textContent = `"${finalQuote}"`;
-  document.getElementById('batatinha-detail').textContent =
-    phaseNum === 1
-      ? `Fase 1 • Corrida para o Altar (${Math.floor(state.phase1.progress)}% concluído)`
-      : `Fase 2 • Defesa do Bolo (Faltavam ${state.phase2.timeLeft.toFixed(1)}s!) • Checkpoint Salvo ✅`;
 
-  // Se perderam na Fase 2 (ou minijogo posterior), libera o botão de Continuar direto da Fase 2!
+  const detailEl = document.getElementById('batatinha-detail');
+  if (activeMg) {
+    detailEl.textContent = `${activeMg.title} • Tente outra vez!`;
+  } else {
+    detailEl.textContent =
+      phaseNum === 1
+        ? `Fase 1 • Corrida para o Altar (${Math.floor(state.phase1.progress)}% concluído)`
+        : `Fase 2 • Defesa do Bolo (Faltavam ${state.phase2.timeLeft.toFixed(1)}s!) • Checkpoint Salvo ✅`;
+  }
+
   const btnContinuePhase = document.getElementById('btn-continue-phase');
   const btnRetry = document.getElementById('btn-retry');
+  const btnBatatinhaMg = document.getElementById('btn-batatinha-minigames');
 
-  if (phaseNum >= 2) {
+  if (activeMg) {
+    btnContinuePhase.classList.remove('hidden');
+    btnContinuePhase.textContent = '🔄 Reiniciar Minigame';
+    btnRetry.textContent = '🔄 Voltar p/ Fase 1';
+    if (btnBatatinhaMg) btnBatatinhaMg.classList.remove('hidden');
+  } else if (phaseNum >= 2) {
     btnContinuePhase.classList.remove('hidden');
     btnContinuePhase.textContent = `🎂 Continuar na Fase ${phaseNum}`;
     btnRetry.textContent = '🔄 Voltar p/ Fase 1';
+    if (btnBatatinhaMg) btnBatatinhaMg.classList.remove('hidden');
   } else {
     btnContinuePhase.classList.add('hidden');
     btnRetry.textContent = '🔄 Tentar Novamente';
+    if (btnBatatinhaMg) btnBatatinhaMg.classList.add('hidden');
   }
 
   sfx.playBatatinha();
@@ -604,15 +734,65 @@ function triggerVictory(fromNetwork = false) {
   state.screen = 'victory';
   state.freezeFrame = false;
 
-  document.getElementById('victory-couple-names').textContent =
-    `Parabéns, ${state.groomName} & ${state.brideName}! 💍`;
+  const victoryTitle = document.querySelector('.victory-title');
+  const victoryCoupleNames = document.getElementById('victory-couple-names');
+  const victorySummary = document.getElementById('victory-summary-text');
+
+  if (victoryTitle) victoryTitle.textContent = 'SOBREVIVERAM!';
+  if (victoryCoupleNames) {
+    victoryCoupleNames.textContent = `Parabéns, ${state.groomName} & ${state.brideName}! 💍`;
+  }
+  if (victorySummary) {
+    victorySummary.innerHTML = `
+      ✅ Boletos desviados com sucesso<br/>
+      ✅ Pilhas de provas ignoradas até segunda-feira<br/>
+      ✅ Bolo de casamento 100% salvo dos primos furões!
+    `;
+  }
 
   sfx.playWeddingMarch();
-  spawnConfettiBurst(110);
+  spawnConfettiBurst(120);
   showOverlayScreen('victory');
 
   if (state.mode === 'host' && !fromNetwork) {
     net.send({ type: 'victory' });
+  }
+}
+
+function triggerMinigameVictory(message, fromNetwork = false) {
+  if (state.screen === 'victory') return;
+  const currentMg = progression.activeMinigame;
+  if (currentMg) {
+    progression.markCompleted(currentMg.id);
+  }
+
+  state.screen = 'victory';
+  state.freezeFrame = false;
+
+  const victoryTitle = document.querySelector('.victory-title');
+  const victoryCoupleNames = document.getElementById('victory-couple-names');
+  const victorySummary = document.getElementById('victory-summary-text');
+
+  if (victoryTitle) victoryTitle.textContent = 'MINIGAME VENCIDO! 🏆';
+  if (victoryCoupleNames) {
+    victoryCoupleNames.textContent = `Parabéns, ${state.groomName} & ${state.brideName}! 💍`;
+  }
+  if (victorySummary) {
+    const cleanTitle = escapeHtml(currentMg ? currentMg.title : 'Minigame da Lua de Mel');
+    const cleanMessage = escapeHtml(message || 'Vocês formam uma dupla imbatível!');
+    victorySummary.innerHTML = `
+      ✅ Desafio superado: <strong>${cleanTitle}</strong><br/>
+      🎉 <em>"${cleanMessage}"</em><br/>
+      🏝️ Mais minigames aguardam no Menu de Minigames!
+    `;
+  }
+
+  sfx.playWeddingMarch();
+  spawnConfettiBurst(120);
+  showOverlayScreen('victory');
+
+  if (state.mode === 'host' && !fromNetwork) {
+    net.send({ type: 'victory', message, fromMinigame: true });
   }
 }
 
@@ -729,6 +909,33 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
   }
 
+  // Minigame ativo: encaminha tecla para o minigame
+  if (progression.activeMinigame) {
+    if (code === 'KeyW') state.keys.p1Up = true;
+    if (code === 'KeyS') state.keys.p1Down = true;
+    if (code === 'KeyA') state.keys.p1Left = true;
+    if (code === 'KeyD') state.keys.p1Right = true;
+    if (code === 'ArrowUp') state.keys.p2Up = true;
+    if (code === 'ArrowDown') state.keys.p2Down = true;
+    if (code === 'ArrowLeft') state.keys.p2Left = true;
+    if (code === 'ArrowRight') state.keys.p2Right = true;
+
+    if (state.mode === 'guest') {
+      if (code === 'KeyW' || code === 'ArrowUp') state.keys.p2Up = true;
+      if (code === 'KeyS' || code === 'ArrowDown') state.keys.p2Down = true;
+      if (code === 'KeyA' || code === 'ArrowLeft') state.keys.p2Left = true;
+      if (code === 'KeyD' || code === 'ArrowRight') state.keys.p2Right = true;
+    }
+
+    if (progression.activeMinigame.onKeyDown) {
+      progression.activeMinigame.onKeyDown(code, ctxApi);
+    }
+    if (state.mode === 'guest' || state.mode === 'host') {
+      net.send({ type: 'mg_key_event', code, isDown: true });
+    }
+    return;
+  }
+
   // Modo Online: qualquer tecla de pulo/abaixar/direção controla o personagem do seu aparelho
   if (state.mode === 'host') {
     if (code === 'KeyW' || code === 'ArrowUp' || code === 'Space') {
@@ -808,6 +1015,33 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
   const code = e.code;
+
+  if (progression.activeMinigame) {
+    if (code === 'KeyW') state.keys.p1Up = false;
+    if (code === 'KeyS') state.keys.p1Down = false;
+    if (code === 'KeyA') state.keys.p1Left = false;
+    if (code === 'KeyD') state.keys.p1Right = false;
+    if (code === 'ArrowUp') state.keys.p2Up = false;
+    if (code === 'ArrowDown') state.keys.p2Down = false;
+    if (code === 'ArrowLeft') state.keys.p2Left = false;
+    if (code === 'ArrowRight') state.keys.p2Right = false;
+
+    if (state.mode === 'guest') {
+      if (code === 'KeyW' || code === 'ArrowUp') state.keys.p2Up = false;
+      if (code === 'KeyS' || code === 'ArrowDown') state.keys.p2Down = false;
+      if (code === 'KeyA' || code === 'ArrowLeft') state.keys.p2Left = false;
+      if (code === 'KeyD' || code === 'ArrowRight') state.keys.p2Right = false;
+    }
+
+    if (progression.activeMinigame.onKeyUp) {
+      progression.activeMinigame.onKeyUp(code, ctxApi);
+    }
+    if (state.mode === 'guest' || state.mode === 'host') {
+      net.send({ type: 'mg_key_event', code, isDown: false });
+    }
+    return;
+  }
+
   if (state.mode === 'host') {
     if (code === 'KeyS' || code === 'ArrowDown') duckPlayer('p1', false);
     if (code === 'KeyA' || code === 'ArrowLeft') state.keys.p1Left = false;
@@ -834,6 +1068,60 @@ window.addEventListener('keyup', (e) => {
   if (code === 'ArrowLeft') state.keys.p2Left = false;
   if (code === 'ArrowRight') state.keys.p2Right = false;
 });
+
+// Eventos de Ponteiro (Mouse & Touch direto no Canvas para os Minigames)
+function getCanvasCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = state.width / (rect.width || 1);
+  const scaleY = state.height / (rect.height || 1);
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (!progression.activeMinigame) return;
+  const coords = getCanvasCoords(e.clientX, e.clientY);
+  if (progression.activeMinigame.onPointerDown) {
+    progression.activeMinigame.onPointerDown(coords.x, coords.y, ctxApi);
+  }
+  if (state.mode === 'guest' || state.mode === 'host') {
+    net.send({ type: 'mg_pointer_down', x: coords.x, y: coords.y });
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!progression.activeMinigame) return;
+  const coords = getCanvasCoords(e.clientX, e.clientY);
+  if (progression.activeMinigame.onPointerMove) {
+    progression.activeMinigame.onPointerMove(coords.x, coords.y, ctxApi);
+  }
+  if (state.mode === 'guest' || state.mode === 'host') {
+    net.send({ type: 'mg_pointer_move', x: coords.x, y: coords.y });
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  if (!progression.activeMinigame) return;
+  if (progression.activeMinigame.onPointerUp) {
+    progression.activeMinigame.onPointerUp(ctxApi);
+  }
+  if (state.mode === 'guest' || state.mode === 'host') {
+    net.send({ type: 'mg_pointer_up' });
+  }
+});
+
+canvas.addEventListener('wheel', (e) => {
+  if (!progression.activeMinigame) return;
+  if (progression.activeMinigame.onWheel) {
+    progression.activeMinigame.onWheel(e.deltaY, ctxApi);
+    e.preventDefault();
+  }
+  if (state.mode === 'guest' || state.mode === 'host') {
+    net.send({ type: 'mg_wheel', deltaY: e.deltaY });
+  }
+}, { passive: false });
 
 function hasCloseObstacle(laneIndex) {
   const px = getPhase1PlayerX();
@@ -1416,7 +1704,11 @@ net.onData = (data) => {
       break;
 
     case 'victory':
-      triggerVictory(true);
+      if (data.fromMinigame) {
+        triggerMinigameVictory(data.message, true);
+      } else {
+        triggerVictory(true);
+      }
       break;
 
     case 'request_retry':
@@ -1431,9 +1723,49 @@ net.onData = (data) => {
       }
       break;
 
+    case 'request_start_stage':
+      if (state.mode === 'host' && data.stageId) {
+        startStageById(data.stageId, false);
+      }
+      break;
+
     case 'start_custom_stage':
       if (data.stageId) {
         startStageById(data.stageId, true);
+      }
+      break;
+
+    case 'mg_pointer_down':
+      if (progression.activeMinigame && progression.activeMinigame.onPointerDown) {
+        progression.activeMinigame.onPointerDown(data.x, data.y, ctxApi);
+      }
+      break;
+
+    case 'mg_pointer_move':
+      if (progression.activeMinigame && progression.activeMinigame.onPointerMove) {
+        progression.activeMinigame.onPointerMove(data.x, data.y, ctxApi);
+      }
+      break;
+
+    case 'mg_pointer_up':
+      if (progression.activeMinigame && progression.activeMinigame.onPointerUp) {
+        progression.activeMinigame.onPointerUp(ctxApi);
+      }
+      break;
+
+    case 'mg_wheel':
+      if (progression.activeMinigame && progression.activeMinigame.onWheel) {
+        progression.activeMinigame.onWheel(data.deltaY, ctxApi);
+      }
+      break;
+
+    case 'mg_key_event':
+      if (progression.activeMinigame) {
+        if (data.isDown && progression.activeMinigame.onKeyDown) {
+          progression.activeMinigame.onKeyDown(data.code, ctxApi);
+        } else if (!data.isDown && progression.activeMinigame.onKeyUp) {
+          progression.activeMinigame.onKeyUp(data.code, ctxApi);
+        }
       }
       break;
   }
@@ -2163,13 +2495,7 @@ function gameLoop(now) {
   lastTime = now;
   state.time += dt;
 
-  const activeCustomStage = progression.getStageById(state.screen);
-  const isCustomMinigame =
-    activeCustomStage &&
-    activeCustomStage.id !== 'phase1' &&
-    activeCustomStage.id !== 'phase2' &&
-    activeCustomStage.enabled &&
-    activeCustomStage.hooks;
+  const activeMg = progression.activeMinigame;
 
   if (!state.freezeFrame) {
     if (state.screen === 'phase1') {
@@ -2178,18 +2504,17 @@ function gameLoop(now) {
     } else if (state.screen === 'phase2') {
       updatePhase2(dt);
       broadcastHostState(dt);
-    } else if (isCustomMinigame && activeCustomStage.hooks.onUpdate) {
-      activeCustomStage.hooks.onUpdate(dt, state);
-      broadcastHostState(dt);
+    } else if (activeMg && activeMg.onUpdate) {
+      activeMg.onUpdate(dt, ctxApi);
     }
   }
 
   if (state.screen === 'phase1' || (state.screen === 'batatinha' && state.failedPhase === 1)) {
     renderPhase1();
-  } else if (state.screen === 'phase2' || state.screen === 'victory' || (state.screen === 'batatinha' && state.failedPhase === 2)) {
+  } else if (state.screen === 'phase2' || (state.screen === 'batatinha' && state.failedPhase === 2)) {
     renderPhase2();
-  } else if (isCustomMinigame && activeCustomStage.hooks.onRender) {
-    activeCustomStage.hooks.onRender(ctx, state);
+  } else if (activeMg && activeMg.onRender) {
+    activeMg.onRender(ctx, ctxApi);
   } else {
     renderMenuBackground();
   }
@@ -2210,11 +2535,49 @@ function returnToMenu() {
     clearInterval(transitionTimerId);
     transitionTimerId = null;
   }
+  progression.activeMinigame = null;
+  state.mgState = {};
   net.disconnect();
   state.mode = 'local';
   state.screen = 'menu';
   state.freezeFrame = false;
   showOverlayScreen('menu');
+}
+
+// Botão: Abrir Hub de Minigames no Menu
+const btnOpenMinigamesMenu = document.getElementById('btn-open-minigames-menu');
+if (btnOpenMinigamesMenu) {
+  btnOpenMinigamesMenu.addEventListener('click', () => {
+    sfx.init();
+    openMinigamesHub();
+  });
+}
+
+// Botão: Abrir Hub de Minigames na tela de Vitória
+const btnOpenMinigamesVictory = document.getElementById('btn-open-minigames-victory');
+if (btnOpenMinigamesVictory) {
+  btnOpenMinigamesVictory.addEventListener('click', () => {
+    sfx.init();
+    openMinigamesHub();
+  });
+}
+
+// Botão: Fechar Hub de Minigames e voltar ao Menu
+const btnCloseMinigames = document.getElementById('btn-close-minigames');
+if (btnCloseMinigames) {
+  btnCloseMinigames.addEventListener('click', () => {
+    sfx.playClick();
+    returnToMenu();
+  });
+}
+
+// Botão: Ir ao Hub de Minigames a partir da tela BATATINHA!
+const btnBatatinhaMinigames = document.getElementById('btn-batatinha-minigames');
+if (btnBatatinhaMinigames) {
+  btnBatatinhaMinigames.addEventListener('click', () => {
+    sfx.playClick();
+    openMinigamesHub();
+  });
 }
 
 // Botão: Jogar no Mesmo Aparelho (Local)
@@ -2274,10 +2637,11 @@ document.getElementById('btn-cancel-online').addEventListener('click', () => {
   returnToMenu();
 });
 
-// Botão: Continuar direto da Fase 2 (ou fase atual com checkpoint) na tela "BATATINHA!"
+// Botão: Continuar direto da Fase 2 (ou minijogo atual) na tela "BATATINHA!"
 document.getElementById('btn-continue-phase').addEventListener('click', () => {
   sfx.playClick();
-  const targetStageId = progression.currentStageId || 'phase2';
+  const activeMg = progression.activeMinigame;
+  const targetStageId = activeMg ? activeMg.id : (progression.currentStageId || 'phase2');
   if (state.mode === 'guest') {
     net.send({ type: 'request_continue_phase', stageId: targetStageId });
   } else {
@@ -2288,6 +2652,7 @@ document.getElementById('btn-continue-phase').addEventListener('click', () => {
 // Botão: Tentar Novamente (Reiniciar da Fase 1) na tela "BATATINHA!"
 document.getElementById('btn-retry').addEventListener('click', () => {
   sfx.playClick();
+  progression.activeMinigame = null;
   if (state.mode === 'guest') {
     net.send({ type: 'request_retry' });
   } else {
@@ -2298,10 +2663,19 @@ document.getElementById('btn-retry').addEventListener('click', () => {
 // Botão: Jogar Novamente na tela de Vitória
 document.getElementById('btn-play-again').addEventListener('click', () => {
   sfx.playClick();
-  if (state.mode === 'guest') {
-    net.send({ type: 'request_retry' });
+  if (progression.activeMinigame) {
+    const currentMgId = progression.activeMinigame.id;
+    if (state.mode === 'guest') {
+      net.send({ type: 'request_continue_phase', stageId: currentMgId });
+    } else {
+      startStageById(currentMgId, false);
+    }
   } else {
-    startPhase1(false);
+    if (state.mode === 'guest') {
+      net.send({ type: 'request_retry' });
+    } else {
+      startPhase1(false);
+    }
   }
 });
 

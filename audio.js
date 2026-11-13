@@ -66,6 +66,10 @@ export class SoundManager {
     osc.start(now);
     osc.stop(now + duration + 0.02);
     this.activeNodes.push(osc);
+    osc.onended = () => {
+      const idx = this.activeNodes.indexOf(osc);
+      if (idx !== -1) this.activeNodes.splice(idx, 1);
+    };
   }
 
   // Efeito de clique de UI

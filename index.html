@@ -134,6 +134,14 @@
               <small>Criar ou Entrar na Sala com código de 4 letras</small>
             </div>
           </button>
+
+          <button id="btn-open-minigames-menu" class="btn btn-accent btn-large">
+            <span class="btn-icon">🏝️</span>
+            <div class="btn-text">
+              <strong>Menu de Minigames da Lua de Mel (11 Jogos!)</strong>
+              <small>Sinuca, Roguelite, Contra, Top Gear, Colar na Prova e mais!</small>
+            </div>
+          </button>
         </div>
 
         <!-- Resumo de Controles -->
@@ -241,6 +249,9 @@
           <button id="btn-retry" class="btn btn-danger btn-giant">
             🔄 Tentar Novamente
           </button>
+          <button id="btn-batatinha-minigames" class="btn btn-secondary hidden">
+            🕹️ Menu de Minigames
+          </button>
           <button id="btn-batatinha-menu" class="btn btn-outline">
             🏠 Menu Principal
           </button>
@@ -262,7 +273,7 @@
 
         <div class="victory-stats">
           <p id="victory-couple-names">Parabéns, Joao Costenaro &amp; Noiva!</p>
-          <p class="victory-irony">
+          <p id="victory-summary-text" class="victory-irony">
             ✅ Boletos desviados com sucesso<br/>
             ✅ Pilhas de provas ignoradas até segunda-feira<br/>
             ✅ Bolo de casamento 100% salvo dos primos furões!
@@ -270,7 +281,10 @@
         </div>
 
         <div class="victory-actions">
-          <button id="btn-play-again" class="btn btn-primary btn-giant">
+          <button id="btn-open-minigames-victory" class="btn btn-accent btn-giant">
+            🏝️ Menu de Minigames (11 Jogos!)
+          </button>
+          <button id="btn-play-again" class="btn btn-primary">
             🎮 Jogar Novamente
           </button>
           <button id="btn-victory-menu" class="btn btn-outline">
@@ -279,9 +293,52 @@
         </div>
       </div>
     </section>
+
+    <!-- ==========================================
+         TELA 6: MENU DE MINIGAMES DA LUA DE MEL (11 JOGOS)
+    =========================================== -->
+    <section id="screen-minigames" class="overlay-screen hidden">
+      <div class="card minigames-hub-card">
+        <div class="crown-badge">🏝️ ARCADE OFICIAL DO CASAL • 11 JOGOS 🕹️</div>
+        <h2 class="hub-title">MINIGAMES DA LUA DE MEL</h2>
+        <p class="hub-subtitle">
+          Escolham qualquer um dos 11 desafios cooperativos ou X1 (qualquer vacilo é <strong>BATATINHA!</strong>):
+        </p>
+
+        <div id="minigames-grid" class="minigames-grid">
+          <!-- Preenchido dinamicamente por game.js a partir de minigames.js -->
+        </div>
+
+        <div class="hub-footer">
+          <button id="btn-close-minigames" class="btn btn-outline">
+            ⬅️ Voltar ao Menu Principal
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <!-- Scripts Modulares ES6 -->
-  <script type="module" src="game.js"></script>
+  <!-- Scripts Modulares ES6 com Fallback Bundle para Abertura Local Direta (file:///) -->
+  <script>
+    (function() {
+      const isFileProtocol = window.location.protocol === 'file:';
+      const script = document.createElement('script');
+      if (isFileProtocol) {
+        script.src = 'game.bundle.js';
+      } else {
+        script.type = 'module';
+        script.src = 'game.js';
+      }
+      script.onerror = function() {
+        if (!script.src.includes('game.bundle.js')) {
+          console.warn('Fallback para game.bundle.js acionado.');
+          const fallback = document.createElement('script');
+          fallback.src = 'game.bundle.js';
+          document.body.appendChild(fallback);
+        }
+      };
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>

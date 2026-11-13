@@ -1,0 +1,45 @@
+Atue como um Engenheiro de Jogos Web Sênior. Preciso expandir o jogo multiplayer **"Operação Lua de Mel"** (construído em HTML5 `<canvas>`, CSS3, JavaScript ES6+ modular e PeerJS para multiplayer local ou em 2 dispositivos).
+
+### Regra Global de Arquitetura e Derrota
+- Após o casal vencer as **2 Fases Principais** (1. Corrida para o Altar e 2. Defesa do Bolo), desbloqueie a tela **"Menu de Minigames da Lua de Mel"**, permitindo escolher qualquer um dos 11 minigames abaixo.
+- **Modularização Obrigatória:** Para evitar arquivos gigantes e facilitar a manutenção, crie um gerenciador principal (`minigames.js`) e separe os minigames em módulos organizados (ex: `games_part1.js`, `games_part2.js`, `games_part3.js`), compartilhando o mesmo motor de multiplayer (teclado local / touch dividido / PeerJS) e áudio procedural (Web Audio API).
+- **Regra Crítica de Derrota:** Em TODOS os 11 minigames, qualquer condição de derrota deve disparar imediatamente a tela padrão **"BATATINHA!"** com som cômico e botão para reiniciar o minigame ou voltar ao menu.
+
+### Especificação dos 11 Minigames (Todos para 2 Jogadores - Local ou Online)
+
+1. **Sinuca 2D (Duelo de Casal):**
+   - Mesa de bilhar vista de cima com física 2D de colisão e atrito. Jogador 1 (Noivo) e Jogador 2 (Noiva) alternam tacadas (arrastar para mirar e definir força). Quem encaçapar a bola 8 antes da hora ou deixar o outro vencer leva **"BATATINHA!"**.
+
+2. **Roguelite Cooperativo (Sobrevivência na Lua de Mel):**
+   - Arena top-down onde o casal enfrenta ondas de "boletos", "provas" e "parentes". A cada 15 segundos, o jogo pausa e oferece 3 cartas de upgrade aleatórias (ex: *Café Expresso +Velocidade*, *Escudo de Aliança*, *Caneta Vermelha Área*). Se a vida compartilhada chegar a zero: **"BATATINHA!"**.
+
+3. **Plataforma Cooperativo (O Chão é Lava de Boletos):**
+   - Fase lateral com plataformas móveis, molas e botões que um jogador precisa pisar para abrir a porta para o outro. Ambos precisam alcançar o portal juntos. Cair no abismo ou nos espinhos: **"BATATINHA!"**.
+
+4. **Jogo de Tiro estilo Contra (Run & Gun):**
+   - Ação frenética 2D lateral. Os noivos correm atirando (canetas vermelhas e buquês explosivos) contra chefões e inimigos voadores (drones de paparazzi e pilhas de papelada) com power-ups de tiro espalhado (`S`) e laser (`L`). Perder as vidas: **"BATATINHA!"**.
+
+5. **Jump King do Casal (Escalada de Precisão):**
+   - Escalada vertical difícil onde segurar o botão de pulo carrega a força e o ângulo do salto. O Noivo e a Noiva estão ligados por uma corda elástica (ou precisam subir as mesmas plataformas sem derrubar um ao outro). Cair de volta para a base ou errar o salto crítico: **"BATATINHA!"**.
+
+6. **X1 de Louça (Duelo de Velocidade):**
+   - Competição frenética de limpeza após o jantar. Cada jogador tem uma pilha gigante de pratos sujos. É preciso alternar cliques/teclas rápidas para ensaboar, enxaguar e secar sem quebrar. Quem terminar a pilha primeiro vence; quem quebrar 3 pratos ou perder o duelo leva **"BATATINHA!"**.
+
+7. **Flappy Bird Duplo (Voo da Lua de Mel):**
+   - O Noivo e a Noiva voam simultaneamente desviando de canos/colunas de decoração de casamento. Um controla a altitude superior e outro a inferior (ou ambos na mesma tela com cores diferentes). Se qualquer um bater no cano: **"BATATINHA!"**.
+
+8. **Top Gear (Corrida Retrô para o Aeroporto):**
+   - Corrida pseudo-3D estilo arcade clássico (estrada com curvas, horizonte e efeito de velocidade) com tela dividida (Split-Screen) ou disputa na mesma pista, incluindo botão de **Nitro** limitado e coleta de galões de combustível. Ficar sem gasolina ou chegar em último: **"BATATINHA!"**.
+
+9. **Jogo de Colar na Prova (Com Seletor de Dificuldade por Matérias):**
+   - Temática escolar irônica (homenagem ao professor). O casal precisa copiar a prova um do outro enquanto o "Professor Fiscal" ronda a sala com um cone de visão vermelho.
+   - **Seletor de Dificuldade antes de iniciar:** *Educação Física* (Fácil - fiscal lento), *História* (Médio), *Matemática* (Difícil) e *Física Quântica* (Insano - fiscal rápido e imprevisível). Ser pego colando: **"BATATINHA!"**.
+
+10. **Você é a IA (Simulador de Chat sob Pressão):**
+    - O casal assume o papel de uma Inteligência Artificial recebendo prompts absurdos dos alunos e convidados em tempo real (ex: *"Explique a Revolução Francesa em 3 emojis"*, *"Crie desculpa para não ir no almoço de domingo"*). Os jogadores precisam escolher rapidamente as palavras-chave certas em equipe antes da barra de "Alucinação" encher. Se alucinar 100%: **"BATATINHA!"**.
+
+11. **Derrube a Torre (Demolição Cooperativa):**
+    - Estilo *Angry Birds* / física de blocos 2D (gravidade e colisão de caixas). Há uma torre gigante feita de blocos de vidro, madeira e concreto (representando "Estresse", "Burocracia" e "Diários de Classe"). O Noivo e a Noiva têm um número limitado de arremessos alternados (estilingue de buquês e malas pesadas) para derrubar toda a estrutura abaixo da linha limite. Acabar os arremessos sem derrubar tudo: **"BATATINHA!"**.
+
+### Instruções de Execução
+Implemente a arquitetura do menu de seleção e os primeiros módulos agora de forma limpa, funcional e sem placeholders. Caso o código exceda o limite de uma única resposta, divida a entrega em etapas lógicas (Etapa 1: Menu Hub + Minigames 1 a 4; Etapa 2: Minigames 5 a 8; Etapa 3: Minigames 9 a 11) garantindo que todos se conectem perfeitamente.
