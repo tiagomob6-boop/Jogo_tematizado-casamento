@@ -1,6 +1,6 @@
 // ============================================================================
-// minigames.js - Gerenciador Central dos 11 Minigames da Lua de Mel
-// Importa e orquestra games_part1.js (1-4), games_part2.js (5-8) e games_part3.js (9-11)
+// minigames.js - Gerenciador Central dos 12 Minigames da Lua de Mel
+// Importa e orquestra games_part1.js (1-4), games_part2.js (5-8) e games_part3.js (9-12)
 // ============================================================================
 
 import {
@@ -20,7 +20,8 @@ import {
 import {
   Minigame9_ColarProva,
   Minigame10_VoceEhIA,
-  Minigame11_Torre
+  Minigame11_Torre,
+  Minigame12_FutebolBotao
 } from './games_part3.js';
 
 export const HONEYMOON_MINIGAMES = [
@@ -34,7 +35,8 @@ export const HONEYMOON_MINIGAMES = [
   Minigame8_TopGear,
   Minigame9_ColarProva,
   Minigame10_VoceEhIA,
-  Minigame11_Torre
+  Minigame11_Torre,
+  Minigame12_FutebolBotao
 ];
 
 export const MINIGAME_CATALOG = [

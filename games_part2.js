@@ -373,36 +373,136 @@ export const Minigame6_Louca = {
 // ============================================================================
 // MINIGAME 7: FLAPPY BIRD DUPLO (VOO DA LUA DE MEL)
 // ============================================================================
+// MINIGAME 7: FLAPPY DUPLO (4 NÍVEIS PROGRESSIVOS DE VOO DOS NOIVOS)
+// ============================================================================
+const FLAPPY_LEVELS = [
+  {
+    level: 1,
+    name: 'Nível 1: Jardim do Altar',
+    goalPipes: 10,
+    speed: 210,
+    spawnInterval: 2.0,
+    gapRatio: 0.34,
+    minGap: 155,
+    moveAmp: 0,
+    bgTop: '#1e1b4b',
+    bgBot: '#312e81',
+    pipeColor: '#f43f5e'
+  },
+  {
+    level: 2,
+    name: 'Nível 2: Ventania dos Primos',
+    goalPipes: 12,
+    speed: 255,
+    spawnInterval: 1.75,
+    gapRatio: 0.31,
+    minGap: 142,
+    moveAmp: 34,
+    bgTop: '#4c1d95',
+    bgBot: '#be185d',
+    pipeColor: '#ec4899'
+  },
+  {
+    level: 3,
+    name: 'Nível 3: Tempestade de Boletos',
+    goalPipes: 15,
+    speed: 295,
+    spawnInterval: 1.55,
+    gapRatio: 0.29,
+    minGap: 132,
+    moveAmp: 52,
+    bgTop: '#0f172a',
+    bgBot: '#1e3a8a',
+    pipeColor: '#8b5cf6'
+  },
+  {
+    level: 4,
+    name: 'Nível 4: Lua de Mel Turbinada',
+    goalPipes: 18,
+    speed: 335,
+    spawnInterval: 1.38,
+    gapRatio: 0.27,
+    minGap: 124,
+    moveAmp: 68,
+    bgTop: '#3b0764',
+    bgBot: '#b45309',
+    pipeColor: '#f59e0b'
+  }
+];
+
 export const Minigame7_Flappy = {
   id: 'mg7_flappy',
   order: 7,
   title: '7. FLAPPY DUPLO: VOO DOS NOIVOS',
-  subtitle: 'Passem juntos por 10 colunas floridas sem bater! [W] = Noivo | [⬆️/Espaço] = Noiva',
+  subtitle: '4 Níveis! Passem pelas colunas floridas sem bater! [W] = Noivo | [⬆️/Espaço] = Noiva',
   icon: '🕊️',
 
   onEnter(ctxApi) {
     const { height } = ctxApi.getViewport();
     ctxApi.mgState = {
+      selectingLevel: true,
+      levelIdx: 0,
+      levelCfg: FLAPPY_LEVELS[0],
       passedCount: 0,
-      goalPipes: 10,
+      spawnedCount: 0,
+      goalPipes: FLAPPY_LEVELS[0].goalPipes,
       p1: { y: height * 0.42, vy: 0 },
       p2: { y: height * 0.58, vy: 0 },
       pipes: [],
-      spawnTimer: 0.4
+      spawnTimer: 0.45,
+      levelTransitionTimer: 0,
+      finished: false,
+      levelBtns: []
     };
+  },
+
+  startLevel(idx, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    const { height } = ctxApi.getViewport();
+    const safeIdx = Math.max(0, Math.min(FLAPPY_LEVELS.length - 1, idx));
+    const cfg = FLAPPY_LEVELS[safeIdx];
+    st.selectingLevel = false;
+    st.levelIdx = safeIdx;
+    st.levelCfg = cfg;
+    st.passedCount = 0;
+    st.spawnedCount = 0;
+    st.goalPipes = cfg.goalPipes;
+    st.p1 = { y: height * 0.42, vy: 0 };
+    st.p2 = { y: height * 0.58, vy: 0 };
+    st.pipes = [];
+    st.spawnTimer = 0.45;
+    st.levelTransitionTimer = 0;
+    st.finished = false;
+    ctxApi.sfx.playClick();
   },
 
   flap(playerKey, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st) return;
+    if (!st || st.selectingLevel || st.finished || st.levelTransitionTimer > 0) return;
     st[playerKey].vy = -340;
     ctxApi.sfx.playJump(playerKey === 'p2');
   },
 
   onUpdate(dt, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st) return;
+    if (!st || st.selectingLevel || st.finished) return;
     const { width, height } = ctxApi.getViewport();
+
+    // Transição celebrativa entre níveis (sem gravidade para não derrubar o casal)
+    if (st.levelTransitionTimer > 0) {
+      st.levelTransitionTimer -= dt;
+      st.p1.y += (height * 0.42 - st.p1.y) * 5 * dt;
+      st.p2.y += (height * 0.58 - st.p2.y) * 5 * dt;
+      st.p1.vy = 0;
+      st.p2.vy = 0;
+      if (st.levelTransitionTimer <= 0) {
+        this.startLevel(st.levelIdx + 1, ctxApi);
+      }
+      return;
+    }
+
+    const cfg = st.levelCfg || FLAPPY_LEVELS[0];
     const gravity = 860;
     const birdX1 = width * 0.24;
     const birdX2 = width * 0.31;
@@ -412,9 +512,14 @@ export const Minigame7_Flappy = {
       b.y += b.vy * dt;
       b.vy += gravity * dt;
 
-      if (b.y < 70 || b.y > height - 25) {
+      if (b.y < 68) {
+        b.y = 68;
+        b.vy = Math.max(0, b.vy);
+      }
+      if (b.y > height - 25 && !st.finished) {
+        st.finished = true;
         const who = k === 'p1' ? ctxApi.getNames().groom : ctxApi.getNames().bride;
-        ctxApi.batatinha(`${who} perdeu altitude no Flappy Duplo!`, {
+        ctxApi.batatinha(`${who} perdeu altitude no ${cfg.name}!`, {
           x: k === 'p1' ? birdX1 : birdX2,
           y: Math.max(80, Math.min(height - 30, b.y)),
           r: 40
@@ -422,25 +527,37 @@ export const Minigame7_Flappy = {
       }
     });
 
+    if (st.finished) return;
+
     st.spawnTimer -= dt;
-    if (st.spawnTimer <= 0 && st.passedCount + st.pipes.length < st.goalPipes) {
-      st.spawnTimer = 2.0;
-      const gapH = Math.max(155, height * 0.34);
+    if (st.spawnTimer <= 0 && st.spawnedCount < st.goalPipes) {
+      st.spawnTimer = cfg.spawnInterval;
+      const gapH = Math.max(cfg.minGap, height * cfg.gapRatio);
       const minCenter = 140 + gapH / 2;
       const maxCenter = height - 80 - gapH / 2;
-      const gapY = minCenter + Math.random() * Math.max(40, maxCenter - minCenter);
+      const baseGapY = minCenter + Math.random() * Math.max(40, maxCenter - minCenter);
+      st.spawnedCount++;
       st.pipes.push({
         x: width + 60,
         w: 62,
-        gapY,
+        baseGapY,
+        gapY: baseGapY,
         gapH,
+        phase: Math.random() * Math.PI * 2,
+        moveAmp: cfg.moveAmp,
         passed: false
       });
     }
 
     for (let i = st.pipes.length - 1; i >= 0; i--) {
       const pp = st.pipes[i];
-      pp.x -= 210 * dt;
+      pp.x -= cfg.speed * dt;
+      if (pp.moveAmp > 0) {
+        pp.phase += dt * 2.2;
+        const minC = 125 + pp.gapH / 2;
+        const maxC = height - 65 - pp.gapH / 2;
+        pp.gapY = Math.max(minC, Math.min(maxC, pp.baseGapY + Math.sin(pp.phase) * pp.moveAmp));
+      }
 
       const topEdge = pp.gapY - pp.gapH / 2;
       const botEdge = pp.gapY + pp.gapH / 2;
@@ -449,9 +566,11 @@ export const Minigame7_Flappy = {
         { b: st.p1, bx: birdX1, name: ctxApi.getNames().groom },
         { b: st.p2, bx: birdX2, name: ctxApi.getNames().bride }
       ].forEach(({ b, bx, name }) => {
-        if (bx + 16 > pp.x && bx - 16 < pp.x + pp.w) {
-          if (b.y - 16 < topEdge || b.y + 16 > botEdge) {
-            ctxApi.batatinha(`${name} bateu na coluna de flores do Flappy Duplo!`, {
+        if (st.finished) return;
+        if (bx + 15 > pp.x && bx - 15 < pp.x + pp.w) {
+          if (b.y - 15 < topEdge || b.y + 15 > botEdge) {
+            st.finished = true;
+            ctxApi.batatinha(`${name} bateu na coluna do ${cfg.name}!`, {
               x: bx,
               y: b.y,
               r: 44
@@ -460,13 +579,25 @@ export const Minigame7_Flappy = {
         }
       });
 
+      if (st.finished) return;
+
       if (!pp.passed && pp.x + pp.w < birdX1) {
         pp.passed = true;
         st.passedCount++;
         ctxApi.sfx.playBounce();
+
         if (st.passedCount >= st.goalPipes) {
-          ctxApi.victory('Voo sincronizado perfeito! Vocês venceram o Flappy Bird Duplo!');
-          return;
+          if (st.levelIdx < FLAPPY_LEVELS.length - 1) {
+            st.pipes = [];
+            st.levelTransitionTimer = 1.9;
+            ctxApi.confetti(55);
+            if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+            return;
+          } else {
+            st.finished = true;
+            ctxApi.victory('Voo lendário! Vocês conquistaram todos os 4 níveis do Flappy Duplo!');
+            return;
+          }
         }
       }
 
@@ -475,11 +606,32 @@ export const Minigame7_Flappy = {
   },
 
   onKeyDown(code, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    if (st.selectingLevel) {
+      if (code === 'Digit1') this.startLevel(0, ctxApi);
+      else if (code === 'Digit2') this.startLevel(1, ctxApi);
+      else if (code === 'Digit3') this.startLevel(2, ctxApi);
+      else if (code === 'Digit4') this.startLevel(3, ctxApi);
+      else if (code === 'Space' || code === 'Enter') this.startLevel(0, ctxApi);
+      return;
+    }
     if (code === 'KeyW') this.flap('p1', ctxApi);
     if (code === 'ArrowUp' || code === 'Space') this.flap('p2', ctxApi);
   },
 
   onPointerDown(x, y, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    if (st.selectingLevel) {
+      for (const btn of st.levelBtns || []) {
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          this.startLevel(btn.idx, ctxApi);
+          return;
+        }
+      }
+      return;
+    }
     const { width } = ctxApi.getViewport();
     if (x < width / 2) this.flap('p1', ctxApi);
     else this.flap('p2', ctxApi);
@@ -489,35 +641,115 @@ export const Minigame7_Flappy = {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
+    const cfg = st.levelCfg || FLAPPY_LEVELS[0];
+
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+    skyGrad.addColorStop(0, cfg.bgTop);
+    skyGrad.addColorStop(1, cfg.bgBot);
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    if (st.selectingLevel) {
+      ctx.save();
+      ctx.fillStyle = '#ffd166';
+      ctx.font = '700 22px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🕊️ FLAPPY DUPLO — ESCOLHA O NÍVEL', width / 2, Math.max(105, height * 0.20));
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '600 14px Fredoka, sans-serif';
+      ctx.fillText('Vença do Nível 1 ao 4 ou comece direto em um desafio mais difícil!', width / 2, Math.max(132, height * 0.25));
+
+      st.levelBtns = [];
+      const bw = Math.min(width - 40, 390);
+      const bh = Math.min(54, Math.max(42, (height - 200) / 5));
+      const startY = Math.max(155, height * 0.31);
+      FLAPPY_LEVELS.forEach((lv, i) => {
+        const bx = (width - bw) / 2;
+        const by = startY + i * (bh + 12);
+        st.levelBtns.push({ idx: i, x: bx, y: by, w: bw, h: bh });
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.strokeStyle = lv.pipeColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 15px Fredoka, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(lv.name, bx + 16, by + bh / 2);
+
+        ctx.fillStyle = '#ffd166';
+        ctx.font = '700 12px Fredoka, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${lv.goalPipes} col.`, bx + bw - 16, by + bh / 2);
+      });
+      ctx.restore();
+      return;
+    }
+
     const birdX1 = width * 0.24;
     const birdX2 = width * 0.31;
-
-    ctx.fillStyle = '#1e1b4b';
-    ctx.fillRect(0, 0, width, height);
 
     // Colunas de Casamento
     st.pipes.forEach((pp) => {
       const topH = pp.gapY - pp.gapH / 2;
       const botY = pp.gapY + pp.gapH / 2;
 
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = cfg.pipeColor;
       ctx.strokeStyle = '#ffd166';
       ctx.lineWidth = 3;
-      ctx.fillRect(pp.x, 62, pp.w, topH - 62);
-      ctx.strokeRect(pp.x, 62, pp.w, topH - 62);
+      if (topH > 62) {
+        ctx.fillRect(pp.x, 62, pp.w, topH - 62);
+        ctx.strokeRect(pp.x, 62, pp.w, topH - 62);
+        ctx.fillRect(pp.x - 5, topH - 16, pp.w + 10, 16);
+        ctx.strokeRect(pp.x - 5, topH - 16, pp.w + 10, 16);
+      }
 
       ctx.fillRect(pp.x, botY, pp.w, height - botY);
       ctx.strokeRect(pp.x, botY, pp.w, height - botY);
+      ctx.fillRect(pp.x - 5, botY, pp.w + 10, 16);
+      ctx.strokeRect(pp.x - 5, botY, pp.w + 10, 16);
     });
 
     // Noivo e Noiva Voadores
     ctxApi.drawGroom(birdX1, st.p1.y + 20, ctxApi.getTime() * 14, 0.72, true);
     ctxApi.drawBride(birdX2, st.p2.y + 20, ctxApi.getTime() * 14, 0.72, true);
 
+    // HUD do Nível
     ctx.fillStyle = '#ffd166';
-    ctx.font = '700 17px Fredoka, sans-serif';
+    ctx.font = '700 16px Fredoka, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`🕊️ COLUNAS SUPERADAS: ${st.passedCount} / ${st.goalPipes}`, width / 2, 92);
+    ctx.fillText(`🕊️ ${cfg.name.toUpperCase()} • COLUNAS: ${st.passedCount} / ${st.goalPipes}`, width / 2, 90);
+
+    if (st.levelTransitionTimer > 0) {
+      const nextCfg = FLAPPY_LEVELS[st.levelIdx + 1];
+      ctx.save();
+      const bw = Math.min(width - 40, 440);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - bw / 2, height / 2 - 42, bw, 84, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#06d6a0';
+      ctx.font = '700 20px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`🎉 ${cfg.name.toUpperCase()} COMPLETO!`, width / 2, height / 2 - 12);
+
+      if (nextCfg) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 15px Fredoka, sans-serif';
+        ctx.fillText(`Preparando ${nextCfg.name}...`, width / 2, height / 2 + 18);
+      }
+      ctx.restore();
+    }
   }
 };
 

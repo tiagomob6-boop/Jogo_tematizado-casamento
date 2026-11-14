@@ -1496,18 +1496,24 @@ const Minigame1_Sinuca = {
 
 // ============================================================================
 // MINIGAME 2: ROGUELITE COOPERATIVO (SOBREVIVÊNCIA NA LUA DE MEL)
+// Totalmente expandido com Arsenal de Armas, Drops de Caixas e Risco Real!
 // ============================================================================
-const ROGUE_UPGRADES = [
-  { id: 'speed', title: '☕ Café dos Professores', desc: '+35% Velocidade para o Casal', key: '1' },
-  { id: 'fire', title: '🖊️ Caneta Vermelha Turbo', desc: 'Tiros 45% mais rápidos e duplos', key: '2' },
-  { id: 'heal', title: '💍 Bênção das Alianças', desc: 'Recupera +40% de Vida e +Escudo', key: '3' }
+const ALL_ROGUE_CARDS = [
+  { id: 'bouquet', title: '💐 Espingarda de Buquês', type: 'weapon', desc: 'Dispara 5 flores em leque com dano de dispersão!', icon: '💐' },
+  { id: 'rings', title: '💍 Alianças Orbitais', type: 'weapon', desc: 'Anéis de ouro giratórios que fatiam inimigos ao redor!', icon: '💍' },
+  { id: 'champagne', title: '🍾 Bomba de Champanhe', type: 'weapon', desc: 'Lança rolhas explosivas periódicas com dano em área!', icon: '🍾' },
+  { id: 'laser', title: '⚡ Raio dos Apaixonados', type: 'weapon', desc: 'Feixe de luz perfurante que derrete filas de boletos!', icon: '⚡' },
+  { id: 'pen_turbo', title: '🖊️ Caneta Laser Turbo', type: 'weapon', desc: 'Aumenta cadência de tiro em +50% e adiciona tiros duplos!', icon: '🖊️' },
+  { id: 'speed', title: '☕ Café Espresso Especial', type: 'stat', desc: '+35% Velocidade de corrida e +20% agilidade do casal!', icon: '☕' },
+  { id: 'shield', title: '🛡️ Escudo do Matrimônio', type: 'stat', desc: 'Cria uma barreira sagrada que absorve até 45 de dano!', icon: '🛡️' },
+  { id: 'heal', title: '🎂 Bolo de Casamento Real', type: 'stat', desc: 'Recupera +50 de HP e aumenta a vida máxima para 130!', icon: '🎂' }
 ];
 
 const Minigame2_Roguelite = {
   id: 'mg2_roguelite',
   order: 2,
   title: '2. ROGUELITE COOP: SOBREVIVÊNCIA',
-  subtitle: 'Sobrevivam 45s às hordas e escolham Cartas de Upgrade a cada 15s!',
+  subtitle: 'Sobrevivam 45s às hordas e coletem Armas e Upgrades!',
   icon: '⚔️',
 
   onEnter(ctxApi) {
@@ -1516,34 +1522,102 @@ const Minigame2_Roguelite = {
       timeLeft: 45.0,
       nextUpgradeTime: 30.0,
       choosingCard: false,
+      offeredCards: [],
       hp: 100,
       maxHp: 100,
+      shieldHp: 0,
       speedMult: 1,
-      fireCooldownMax: 0.48,
-      doubleShot: false,
-      p1: { x: width * 0.4, y: height * 0.55, fireTimer: 0.2 },
-      p2: { x: width * 0.6, y: height * 0.55, fireTimer: 0.2 },
+      p1: {
+        x: width * 0.40,
+        y: height * 0.55,
+        invulnTimer: 0,
+        weapons: { pen: 1 }
+      },
+      p2: {
+        x: width * 0.60,
+        y: height * 0.55,
+        invulnTimer: 0,
+        weapons: { pen: 1 }
+      },
+      p2Manual: false,
+      orbitAngle: 0,
+      fireTimers: {
+        pen: 0.35,
+        bouquet: 0.75,
+        champagne: 1.6,
+        laser: 1.2
+      },
       enemies: [],
+      enemyBullets: [],
       bullets: [],
-      spawnTimer: 0.6
+      explosions: [],
+      drops: [],
+      boss: null,
+      bossSpawned: false,
+      spawnTimer: 0.5,
+      swarmTimer: 4.5,
+      totalKills: 0
     };
+  },
+
+  openUpgradeCards(ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    st.choosingCard = true;
+    const pool = [...ALL_ROGUE_CARDS];
+    const picked = [];
+    while (picked.length < 3 && pool.length > 0) {
+      const idx = Math.floor(Math.random() * pool.length);
+      picked.push(pool.splice(idx, 1)[0]);
+    }
+    st.offeredCards = picked;
+    if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+    else if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
   },
 
   applyUpgrade(idx, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || !st.choosingCard) return;
-    const card = ROGUE_UPGRADES[idx] || ROGUE_UPGRADES[0];
-    if (card.id === 'speed') st.speedMult *= 1.35;
-    if (card.id === 'fire') {
-      st.fireCooldownMax *= 0.65;
-      st.doubleShot = true;
+    if (!st || !st.choosingCard || !st.offeredCards[idx]) return;
+    const card = st.offeredCards[idx];
+
+    if (card.id === 'bouquet' || card.id === 'rings' || card.id === 'champagne' || card.id === 'laser') {
+      st.p1.weapons[card.id] = (st.p1.weapons[card.id] || 0) + 1;
+      st.p2.weapons[card.id] = (st.p2.weapons[card.id] || 0) + 1;
+    } else if (card.id === 'pen_turbo') {
+      st.p1.weapons.pen = (st.p1.weapons.pen || 1) + 1;
+      st.p2.weapons.pen = (st.p2.weapons.pen || 1) + 1;
+      st.fireTimers.pen = Math.max(0.18, st.fireTimers.pen * 0.70);
+    } else if (card.id === 'speed') {
+      st.speedMult *= 1.35;
+    } else if (card.id === 'shield') {
+      st.shieldHp = Math.min(60, st.shieldHp + 45);
+    } else if (card.id === 'heal') {
+      st.maxHp = Math.max(130, st.maxHp + 20);
+      st.hp = Math.min(st.maxHp, st.hp + 50);
     }
-    if (card.id === 'heal') {
-      st.hp = Math.min(st.maxHp, st.hp + 45);
-    }
+
     st.choosingCard = false;
-    ctxApi.sfx.playAltarFanfare();
-    ctxApi.floatingText(st.p1.x, st.p1.y - 30, `UPGRADE: ${card.title}!`, '#06d6a0');
+    ctxApi.floatingText(st.p1.x, st.p1.y - 35, `UPGRADE: ${card.title}!`, '#ffd166');
+    ctxApi.confetti(25);
+    if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+  },
+
+  giveRandomWeaponDrop(player, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    const weaponPool = ['bouquet', 'rings', 'champagne', 'laser', 'pen_turbo'];
+    const wId = weaponPool[Math.floor(Math.random() * weaponPool.length)];
+    if (wId === 'pen_turbo') {
+      player.weapons.pen = (player.weapons.pen || 1) + 1;
+      ctxApi.floatingText(player.x, player.y - 30, '🖊️ CANETA TURBO UP!', '#38bdf8');
+    } else {
+      player.weapons[wId] = (player.weapons[wId] || 0) + 1;
+      const card = ALL_ROGUE_CARDS.find(c => c.id === wId);
+      ctxApi.floatingText(player.x, player.y - 30, `🎁 NOVA ARMA: ${card ? card.title : wId}!`, '#f59e0b');
+    }
+    ctxApi.confetti(15);
+    if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+    else if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
   },
 
   onUpdate(dt, ctxApi) {
@@ -1552,149 +1626,534 @@ const Minigame2_Roguelite = {
 
     const { width, height } = ctxApi.getViewport();
     const keys = ctxApi.getKeys();
-    const spd = 210 * st.speedMult;
+    const spd = 220 * st.speedMult;
 
-    // Movimento P1 e P2
+    // Detecta se P2 assumiu controle manual
+    if (keys.p2Left || keys.p2Right || keys.p2Up || keys.p2Down) {
+      st.p2Manual = true;
+    }
+
+    // 1. Movimento P1 (Noivo)
     if (keys.p1Left) st.p1.x -= spd * dt;
     if (keys.p1Right) st.p1.x += spd * dt;
     if (keys.p1Up) st.p1.y -= spd * dt;
     if (keys.p1Down) st.p1.y += spd * dt;
 
-    if (keys.p2Left) st.p2.x -= spd * dt;
-    if (keys.p2Right) st.p2.x += spd * dt;
-    if (keys.p2Up) st.p2.y -= spd * dt;
-    if (keys.p2Down) st.p2.y += spd * dt;
+    // 2. Movimento P2 (Noiva): Manual ou IA inteligente cooperativa
+    if (st.p2Manual) {
+      if (keys.p2Left) st.p2.x -= spd * dt;
+      if (keys.p2Right) st.p2.x += spd * dt;
+      if (keys.p2Up) st.p2.y -= spd * dt;
+      if (keys.p2Down) st.p2.y += spd * dt;
+    } else {
+      const targetDist = 70;
+      const angle = (st.timeLeft * 0.9);
+      const idealX = st.p1.x + Math.cos(angle) * targetDist;
+      const idealY = st.p1.y + Math.sin(angle) * targetDist;
+      st.p2.x += (idealX - st.p2.x) * 4 * dt;
+      st.p2.y += (idealY - st.p2.y) * 4 * dt;
+    }
 
     [st.p1, st.p2].forEach((p) => {
-      p.x = Math.max(40, Math.min(width - 40, p.x));
-      p.y = Math.max(85, Math.min(height - 40, p.y));
+      p.x = Math.max(35, Math.min(width - 35, p.x));
+      p.y = Math.max(90, Math.min(height - 40, p.y));
+      if (p.invulnTimer > 0) p.invulnTimer -= dt;
     });
 
+    // 3. Tempo e Gatilho de Cartas (a cada 15s)
     st.timeLeft = Math.max(0, st.timeLeft - dt);
     if (st.timeLeft <= 0) {
-      ctxApi.victory('Vocês sobreviveram ao apocalipse de boletos e provas no Roguelite!');
+      ctxApi.victory('O casal sobreviveu a todas as dívidas e parentes no Roguelite!');
       return;
     }
 
     if (st.timeLeft <= st.nextUpgradeTime && st.nextUpgradeTime > 5) {
       st.nextUpgradeTime -= 15;
-      st.choosingCard = true;
-      ctxApi.sfx.playClick();
+      this.openUpgradeCards(ctxApi);
       return;
     }
 
-    // Spawna inimigos (Boletos, Provas, Parentes)
+    // 4. Chefe "O Gerente do Banco" aos 25s restantes
+    if (st.timeLeft <= 25.0 && !st.bossSpawned) {
+      st.bossSpawned = true;
+      st.boss = {
+        x: width / 2,
+        y: -40,
+        targetY: 160,
+        hp: 90,
+        maxHp: 90,
+        spd: 60,
+        r: 34,
+        shootTimer: 2.0,
+        name: 'O GERENTE DO BANCO',
+        emoji: '👹'
+      };
+      ctxApi.floatingText(width / 2, height * 0.35, '⚠️ CHEFE: O GERENTE DO BANCO CHEGOU! ⚠️', '#ef4444');
+      if (ctxApi.sfx?.playBatatinha) ctxApi.sfx.playBatatinha();
+    }
+
+    // Atualiza Chefe se ativo
+    if (st.boss) {
+      const b = st.boss;
+      if (b.y < b.targetY) b.y += 80 * dt;
+      else {
+        const midX = (st.p1.x + st.p2.x) / 2;
+        const midY = (st.p1.y + st.p2.y) / 2;
+        const bAng = Math.atan2(midY - b.y, midX - b.x);
+        b.x += Math.cos(bAng) * b.spd * dt;
+        b.y += Math.sin(bAng) * b.spd * dt;
+
+        b.shootTimer -= dt;
+        if (b.shootTimer <= 0) {
+          b.shootTimer = 2.4;
+          for (let k = 0; k < 8; k++) {
+            const rad = (Math.PI * 2 * k) / 8;
+            st.enemyBullets.push({
+              x: b.x,
+              y: b.y,
+              vx: Math.cos(rad) * 160,
+              vy: Math.sin(rad) * 160,
+              color: '#ef4444',
+              emoji: '💸',
+              life: 3.5,
+              r: 10
+            });
+          }
+          if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+        }
+      }
+    }
+
+    // 5. Spawna Hordas Normais e Swarms
     st.spawnTimer -= dt;
     if (st.spawnTimer <= 0) {
-      st.spawnTimer = Math.max(0.35, 0.9 - ((45 - st.timeLeft) / 45) * 0.45);
+      st.spawnTimer = Math.max(0.22, 0.65 - ((45 - st.timeLeft) / 45) * 0.40);
       const side = Math.floor(Math.random() * 4);
       let ex = Math.random() * width;
-      let ey = 75;
+      let ey = 80;
       if (side === 1) { ex = width + 20; ey = Math.random() * height; }
       if (side === 2) { ex = Math.random() * width; ey = height + 20; }
       if (side === 3) { ex = -20; ey = Math.random() * height; }
 
-      const types = [
-        { emoji: '💸', name: 'Boleto', color: '#ef4444', spd: 95 },
-        { emoji: '📚', name: 'Provas', color: '#3b82f6', spd: 85 },
-        { emoji: '👵', name: 'Parente', color: '#a855f7', spd: 110 }
-      ];
-      const tpl = types[Math.floor(Math.random() * types.length)];
-      st.enemies.push({ x: ex, y: ey, ...tpl, r: 19 });
+      const roll = Math.random();
+      let enemyData;
+      if (roll < 0.50) {
+        enemyData = { emoji: '💸', name: 'Boleto', color: '#ef4444', hp: 1, maxHp: 1, spd: 145, r: 18, type: 'runner' };
+      } else if (roll < 0.78) {
+        enemyData = { emoji: '📚', name: 'Provas', color: '#3b82f6', hp: 4, maxHp: 4, spd: 85, r: 22, type: 'tank' };
+      } else {
+        enemyData = { emoji: '👵', name: 'Parente', color: '#a855f7', hp: 3, maxHp: 3, spd: 75, r: 20, type: 'ranged', shootTimer: 1.8 };
+      }
+      st.enemies.push({ x: ex, y: ey, ...enemyData });
     }
 
-    // Auto-disparo no inimigo mais próximo
+    // Swarm a cada ~5.5s
+    st.swarmTimer -= dt;
+    if (st.swarmTimer <= 0) {
+      st.swarmTimer = 5.5;
+      const swarmSide = Math.random() < 0.5 ? -25 : width + 25;
+      const baseY = 120 + Math.random() * (height - 240);
+      for (let s = 0; s < 5; s++) {
+        st.enemies.push({
+          x: swarmSide,
+          y: baseY + (s - 2) * 24,
+          emoji: '💸',
+          name: 'Enxame',
+          color: '#f97316',
+          hp: 1,
+          maxHp: 1,
+          spd: 160,
+          r: 16,
+          type: 'runner'
+        });
+      }
+    }
+
+    // 6. ROTAÇÃO DE ALIANÇAS ORBITAIS
+    st.orbitAngle += 3.8 * dt;
+
+    // 7. ARMAS DO CASAL: Disparo Automático / Híbrido
     ['p1', 'p2'].forEach((k) => {
       const p = st[k];
-      p.fireTimer -= dt;
-      if (p.fireTimer <= 0 && st.enemies.length > 0) {
-        p.fireTimer = st.fireCooldownMax;
-        let nearest = st.enemies[0];
-        let minDist = Infinity;
-        st.enemies.forEach((en) => {
-          const d = Math.hypot(en.x - p.x, en.y - p.y);
-          if (d < minDist) { minDist = d; nearest = en; }
-        });
-        const ang = Math.atan2(nearest.y - p.y, nearest.x - p.x);
-        const offsets = st.doubleShot ? [-0.12, 0.12] : [0];
-        offsets.forEach((off) => {
-          st.bullets.push({
-            x: p.x,
-            y: p.y - 20,
-            vx: Math.cos(ang + off) * 420,
-            vy: Math.sin(ang + off) * 420,
-            color: k === 'p1' ? '#4cc9f0' : '#ff5d8f',
-            life: 1.4
+      const wMap = p.weapons;
+
+      // 7.1 Caneta Vermelha / Azul
+      if (wMap.pen) {
+        p.penTimer = (p.penTimer || 0) - dt;
+        if (p.penTimer <= 0 && (st.enemies.length > 0 || st.boss)) {
+          p.penTimer = st.fireTimers.pen;
+          const target = this.findNearestEnemy(p, st);
+          if (target) {
+            const ang = Math.atan2(target.y - p.y, target.x - p.x);
+            const bulletCount = wMap.pen >= 2 ? 2 : 1;
+            const spread = 0.15;
+            for (let b = 0; b < bulletCount; b++) {
+              const off = bulletCount === 2 ? (b === 0 ? -spread : spread) : 0;
+              st.bullets.push({
+                x: p.x,
+                y: p.y - 12,
+                vx: Math.cos(ang + off) * 440,
+                vy: Math.sin(ang + off) * 440,
+                damage: wMap.pen >= 3 ? 2.2 : 1.2,
+                color: k === 'p1' ? '#38bdf8' : '#f472b6',
+                life: 1.4,
+                r: 5,
+                kind: 'pen'
+              });
+            }
+          }
+        }
+      }
+
+      // 7.2 Espingarda de Buquês
+      if (wMap.bouquet) {
+        p.bouquetTimer = (p.bouquetTimer || 0) - dt;
+        if (p.bouquetTimer <= 0 && (st.enemies.length > 0 || st.boss)) {
+          p.bouquetTimer = st.fireTimers.bouquet;
+          const target = this.findNearestEnemy(p, st);
+          if (target) {
+            const baseAng = Math.atan2(target.y - p.y, target.x - p.x);
+            const count = 5;
+            for (let f = 0; f < count; f++) {
+              const fAng = baseAng + (f - 2) * 0.16;
+              st.bullets.push({
+                x: p.x,
+                y: p.y - 10,
+                vx: Math.cos(fAng) * 380,
+                vy: Math.sin(fAng) * 380,
+                damage: 1.6,
+                color: '#ec4899',
+                emoji: '💐',
+                life: 0.9,
+                r: 8,
+                kind: 'bouquet'
+              });
+            }
+            if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+          }
+        }
+      }
+
+      // 7.3 Bomba de Champanhe
+      if (wMap.champagne) {
+        p.champagneTimer = (p.champagneTimer || 0) - dt;
+        if (p.champagneTimer <= 0 && (st.enemies.length > 0 || st.boss)) {
+          p.champagneTimer = st.fireTimers.champagne;
+          const target = this.findNearestEnemy(p, st);
+          if (target) {
+            const ang = Math.atan2(target.y - p.y, target.x - p.x);
+            st.bullets.push({
+              x: p.x,
+              y: p.y - 15,
+              vx: Math.cos(ang) * 290,
+              vy: Math.sin(ang) * 290,
+              damage: 4.5,
+              color: '#fef08a',
+              emoji: '🍾',
+              life: 1.2,
+              r: 10,
+              kind: 'champagne'
+            });
+          }
+        }
+      }
+
+      // 7.4 Raio dos Apaixonados
+      if (wMap.laser) {
+        p.laserTimer = (p.laserTimer || 0) - dt;
+        if (p.laserTimer <= 0 && (st.enemies.length > 0 || st.boss)) {
+          p.laserTimer = st.fireTimers.laser;
+          const target = this.findNearestEnemy(p, st);
+          if (target) {
+            const ang = Math.atan2(target.y - p.y, target.x - p.x);
+            st.bullets.push({
+              x: p.x,
+              y: p.y - 12,
+              vx: Math.cos(ang) * 650,
+              vy: Math.sin(ang) * 650,
+              damage: 3.0,
+              piercing: true,
+              color: '#a855f7',
+              life: 1.5,
+              r: 7,
+              kind: 'laser'
+            });
+          }
+        }
+      }
+
+      // 7.5 Dano por Contato das Alianças Orbitais
+      if (wMap.rings) {
+        const ringCount = wMap.rings >= 2 ? 4 : 2;
+        const ringRad = 62;
+        for (let rIdx = 0; rIdx < ringCount; rIdx++) {
+          const rAng = st.orbitAngle + (rIdx * (Math.PI * 2 / ringCount));
+          const rx = p.x + Math.cos(rAng) * ringRad;
+          const ry = p.y + Math.sin(rAng) * ringRad;
+
+          st.enemies.forEach((en) => {
+            if (Math.hypot(en.x - rx, en.y - ry) < en.r + 14) {
+              en.hp -= 2.5 * dt;
+              ctxApi.particles(rx, ry, '#fbbf24', 2, 70);
+            }
           });
-        });
+          if (st.boss && Math.hypot(st.boss.x - rx, st.boss.y - ry) < st.boss.r + 14) {
+            st.boss.hp -= 3.0 * dt;
+            ctxApi.particles(rx, ry, '#fbbf24', 2, 80);
+          }
+        }
       }
     });
 
-    // Atualiza tiros
+    // 8. Atualiza Tiros do Casal
     for (let i = st.bullets.length - 1; i >= 0; i--) {
       const b = st.bullets[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0) st.bullets.splice(i, 1);
-    }
+      if (b.life <= 0) {
+        if (b.kind === 'champagne') {
+          this.triggerExplosion(b.x, b.y, 65, b.damage, ctxApi);
+        }
+        st.bullets.splice(i, 1);
+        continue;
+      }
 
-    // Atualiza inimigos
-    for (let i = st.enemies.length - 1; i >= 0; i--) {
-      const en = st.enemies[i];
-      const d1 = Math.hypot(st.p1.x - en.x, st.p1.y - en.y);
-      const d2 = Math.hypot(st.p2.x - en.x, st.p2.y - en.y);
-      const target = d1 <= d2 ? st.p1 : st.p2;
-      const ang = Math.atan2(target.y - en.y, target.x - en.x);
-      en.x += Math.cos(ang) * en.spd * dt;
-      en.y += Math.sin(ang) * en.spd * dt;
-
-      // Colisão com tiros
-      let killed = false;
-      for (let j = st.bullets.length - 1; j >= 0; j--) {
-        const b = st.bullets[j];
-        if (Math.hypot(en.x - b.x, en.y - b.y) < en.r + 8) {
-          st.bullets.splice(j, 1);
-          killed = true;
-          break;
+      if (st.boss) {
+        if (Math.hypot(st.boss.x - b.x, st.boss.y - b.y) < st.boss.r + b.r) {
+          st.boss.hp -= b.damage;
+          ctxApi.particles(b.x, b.y, '#f59e0b', 4, 120);
+          if (b.kind === 'champagne') {
+            this.triggerExplosion(b.x, b.y, 65, b.damage, ctxApi);
+          }
+          if (!b.piercing) {
+            st.bullets.splice(i, 1);
+            continue;
+          }
         }
       }
-      if (killed) {
-        ctxApi.particles(en.x, en.y, en.color, 10, 140);
+
+      for (let j = st.enemies.length - 1; j >= 0; j--) {
+        const en = st.enemies[j];
+        if (Math.hypot(en.x - b.x, en.y - b.y) < en.r + b.r) {
+          en.hp -= b.damage;
+          ctxApi.particles(b.x, b.y, en.color, 4, 110);
+          if (b.kind === 'champagne') {
+            this.triggerExplosion(b.x, b.y, 65, b.damage, ctxApi);
+          }
+          if (!b.piercing) {
+            st.bullets.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    // Verifica morte do Chefe
+    if (st.boss && st.boss.hp <= 0) {
+      ctxApi.confetti(50);
+      ctxApi.floatingText(st.boss.x, st.boss.y, '🎉 O GERENTE DO BANCO FOI DERROTADO! 🎉', '#ffd166');
+      st.drops.push({ x: st.boss.x, y: st.boss.y, type: 'box', life: 18 });
+      st.drops.push({ x: st.boss.x - 30, y: st.boss.y, type: 'heart', val: 25, life: 18 });
+      st.drops.push({ x: st.boss.x + 30, y: st.boss.y, type: 'heart', val: 25, life: 18 });
+      if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+      st.boss = null;
+    }
+
+    // 9. Atualiza Inimigos
+    for (let i = st.enemies.length - 1; i >= 0; i--) {
+      const en = st.enemies[i];
+
+      if (en.hp <= 0) {
+        st.totalKills++;
+        ctxApi.particles(en.x, en.y, en.color, 12, 150);
+
+        const dRoll = Math.random();
+        if (dRoll < 0.12) {
+          st.drops.push({ x: en.x, y: en.y, type: 'heart', val: 15, life: 14 });
+        } else if (dRoll < 0.22) {
+          st.drops.push({ x: en.x, y: en.y, type: 'box', life: 16 });
+        }
+
         st.enemies.splice(i, 1);
         continue;
       }
 
-      // Dano nos jogadores
-      if (d1 < en.r + 20 || d2 < en.r + 20) {
-        st.hp -= 22;
-        ctxApi.sfx.playBounce();
-        ctxApi.particles(en.x, en.y, '#ff3355', 14, 170);
-        st.enemies.splice(i, 1);
-        if (st.hp <= 0) {
-          ctxApi.batatinha('A vida compartilhada do casal chegou a zero no Roguelite!', {
-            x: target.x,
-            y: target.y,
-            r: 45
-          });
-          return;
+      const d1 = Math.hypot(st.p1.x - en.x, st.p1.y - en.y);
+      const d2 = Math.hypot(st.p2.x - en.x, st.p2.y - en.y);
+      const target = d1 <= d2 ? st.p1 : st.p2;
+      const targetDist = Math.min(d1, d2);
+      const ang = Math.atan2(target.y - en.y, target.x - en.x);
+
+      if (en.type === 'ranged') {
+        if (targetDist > 160) {
+          en.x += Math.cos(ang) * en.spd * dt;
+          en.y += Math.sin(ang) * en.spd * dt;
+        } else if (targetDist < 110) {
+          en.x -= Math.cos(ang) * (en.spd * 0.6) * dt;
+          en.y -= Math.sin(ang) * (en.spd * 0.6) * dt;
         }
+
+        en.shootTimer = (en.shootTimer || 2.0) - dt;
+        if (en.shootTimer <= 0) {
+          en.shootTimer = 2.4;
+          st.enemyBullets.push({
+            x: en.x,
+            y: en.y,
+            vx: Math.cos(ang) * 190,
+            vy: Math.sin(ang) * 190,
+            color: '#ec4899',
+            emoji: '💬',
+            life: 3.2,
+            r: 9
+          });
+        }
+      } else {
+        en.x += Math.cos(ang) * en.spd * dt;
+        en.y += Math.sin(ang) * en.spd * dt;
+      }
+
+      if (d1 < en.r + 20 && st.p1.invulnTimer <= 0) {
+        this.damagePlayer(18, st.p1, ctxApi);
+      }
+      if (d2 < en.r + 20 && st.p2.invulnTimer <= 0) {
+        this.damagePlayer(18, st.p2, ctxApi);
       }
     }
+
+    // 10. Atualiza Projéteis Inimigos
+    for (let k = st.enemyBullets.length - 1; k >= 0; k--) {
+      const eb = st.enemyBullets[k];
+      eb.x += eb.vx * dt;
+      eb.y += eb.vy * dt;
+      eb.life -= dt;
+      if (eb.life <= 0) {
+        st.enemyBullets.splice(k, 1);
+        continue;
+      }
+
+      if (Math.hypot(st.p1.x - eb.x, st.p1.y - eb.y) < eb.r + 18 && st.p1.invulnTimer <= 0) {
+        this.damagePlayer(14, st.p1, ctxApi);
+        st.enemyBullets.splice(k, 1);
+        continue;
+      }
+      if (Math.hypot(st.p2.x - eb.x, st.p2.y - eb.y) < eb.r + 18 && st.p2.invulnTimer <= 0) {
+        this.damagePlayer(14, st.p2, ctxApi);
+        st.enemyBullets.splice(k, 1);
+        continue;
+      }
+    }
+
+    // 11. Coleta de Drops na Arena
+    for (let d = st.drops.length - 1; d >= 0; d--) {
+      const drop = st.drops[d];
+      drop.life -= dt;
+      if (drop.life <= 0) {
+        st.drops.splice(d, 1);
+        continue;
+      }
+
+      const dist1 = Math.hypot(st.p1.x - drop.x, st.p1.y - drop.y);
+      const dist2 = Math.hypot(st.p2.x - drop.x, st.p2.y - drop.y);
+      const collector = dist1 < 36 ? st.p1 : dist2 < 36 ? st.p2 : null;
+
+      if (collector) {
+        if (drop.type === 'heart') {
+          st.hp = Math.min(st.maxHp, st.hp + (drop.val || 15));
+          ctxApi.floatingText(drop.x, drop.y - 20, `+${drop.val || 15} HP ❤️`, '#06d6a0');
+          if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+        } else if (drop.type === 'box') {
+          this.giveRandomWeaponDrop(collector, ctxApi);
+        }
+        st.drops.splice(d, 1);
+      }
+    }
+
+    // 12. Atualiza Explosões Visuais
+    for (let ex = st.explosions.length - 1; ex >= 0; ex--) {
+      const e = st.explosions[ex];
+      e.radius += 120 * dt;
+      e.alpha -= 2.2 * dt;
+      if (e.alpha <= 0) st.explosions.splice(ex, 1);
+    }
+  },
+
+  damagePlayer(amount, player, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+
+    player.invulnTimer = 0.55;
+    ctxApi.particles(player.x, player.y, '#ff3355', 14, 180);
+    if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+
+    if (st.shieldHp > 0) {
+      const absorb = Math.min(st.shieldHp, amount);
+      st.shieldHp -= absorb;
+      amount -= absorb;
+      ctxApi.floatingText(player.x, player.y - 35, `ESCUDO -${absorb}!`, '#38bdf8');
+    }
+
+    if (amount > 0) {
+      st.hp -= amount;
+      ctxApi.floatingText(player.x, player.y - 25, `-${amount} HP!`, '#ef4444');
+    }
+
+    if (st.hp <= 0) {
+      st.hp = 0;
+      ctxApi.batatinha('A vida compartilhada do casal foi consumida pelas hordas de boletos no Roguelite!', {
+        x: player.x,
+        y: player.y,
+        r: 45
+      });
+    }
+  },
+
+  triggerExplosion(x, y, radius, damage, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+
+    st.explosions.push({ x, y, radius: 10, maxRadius: radius, alpha: 1.0 });
+    ctxApi.particles(x, y, '#f59e0b', 16, 210);
+    if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+
+    st.enemies.forEach((en) => {
+      if (Math.hypot(en.x - x, en.y - y) <= radius + en.r) {
+        en.hp -= damage;
+      }
+    });
+    if (st.boss && Math.hypot(st.boss.x - x, st.boss.y - y) <= radius + st.boss.r) {
+      st.boss.hp -= damage;
+    }
+  },
+
+  findNearestEnemy(p, st) {
+    if (st.boss) return st.boss;
+    if (st.enemies.length === 0) return null;
+    let nearest = st.enemies[0];
+    let minDist = Infinity;
+    st.enemies.forEach((en) => {
+      const d = Math.hypot(en.x - p.x, en.y - p.y);
+      if (d < minDist) { minDist = d; nearest = en; }
+    });
+    return nearest;
   },
 
   onKeyDown(code, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || !st.choosingCard) return;
-    if (code === 'Digit1' || code === 'KeyA' || code === 'ArrowLeft') this.applyUpgrade(0, ctxApi);
-    if (code === 'Digit2' || code === 'KeyW' || code === 'ArrowUp' || code === 'Space') this.applyUpgrade(1, ctxApi);
-    if (code === 'Digit3' || code === 'KeyD' || code === 'ArrowRight') this.applyUpgrade(2, ctxApi);
+    if (!st) return;
+
+    if (st.choosingCard) {
+      if (code === 'Digit1' || code === 'KeyA' || code === 'ArrowLeft') this.applyUpgrade(0, ctxApi);
+      if (code === 'Digit2' || code === 'KeyW' || code === 'ArrowUp' || code === 'Space') this.applyUpgrade(1, ctxApi);
+      if (code === 'Digit3' || code === 'KeyD' || code === 'ArrowRight') this.applyUpgrade(2, ctxApi);
+    }
   },
 
   onPointerDown(x, y, ctxApi) {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width } = ctxApi.getViewport();
+
     if (st.choosingCard) {
       if (x < width * 0.36) this.applyUpgrade(0, ctxApi);
       else if (x < width * 0.64) this.applyUpgrade(1, ctxApi);
@@ -1707,33 +2166,56 @@ const Minigame2_Roguelite = {
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
 
-    ctx.fillStyle = '#181028';
+    // 1. Piso da Arena
+    ctx.fillStyle = '#130d22';
     ctx.fillRect(0, 0, width, height);
 
-    // Barra de Vida Compartilhada e Tempo
-    ctx.fillStyle = '#1f2937';
-    ctx.fillRect(width / 2 - 160, 74, 320, 22);
-    ctx.fillStyle = st.hp > 35 ? '#06d6a0' : '#ff3355';
-    ctx.fillRect(width / 2 - 158, 76, Math.max(0, (316 * st.hp) / st.maxHp), 18);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '700 13px Fredoka, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`❤️ VIDA DO CASAL: ${Math.max(0, Math.round(st.hp))}%  |  ⏱️ ${st.timeLeft.toFixed(1)}s`, width / 2, 89);
-
-    // Jogadores
-    ctxApi.drawGroom(st.p1.x, st.p1.y + 15, st.timeLeft * 8, 0.85, true);
-    ctxApi.drawBride(st.p2.x, st.p2.y + 15, st.timeLeft * 8, 0.85, true);
-
-    // Tiros
-    st.bullets.forEach((b) => {
-      ctx.fillStyle = b.color;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.lineWidth = 1;
+    const tileSize = 64;
+    for (let x = 0; x < width; x += tileSize) {
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += tileSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    // 2. Drops na Arena
+    st.drops.forEach((d) => {
+      ctx.save();
+      const pulse = 1 + Math.sin(st.timeLeft * 8) * 0.12;
+      ctx.translate(d.x, d.y);
+      ctx.scale(pulse, pulse);
+
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d.type === 'box' ? '🎁' : '💖', 0, 0);
+      ctx.restore();
     });
 
-    // Inimigos
+    // 3. Explosões de Champanhe
+    st.explosions.forEach((e) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(254, 240, 138, ${Math.max(0, e.alpha * 0.4)})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(245, 158, 11, ${Math.max(0, e.alpha)})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 4. Inimigos Normais
     st.enemies.forEach((en) => {
+      ctx.save();
       ctx.fillStyle = en.color;
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
@@ -1742,56 +2224,273 @@ const Minigame2_Roguelite = {
       ctx.fill();
       ctx.stroke();
 
-      ctx.font = '20px sans-serif';
+      ctx.font = '22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(en.emoji, en.x, en.y);
 
-      ctx.font = '700 12px Fredoka, sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(en.name, en.x, en.y - en.r - 9);
+      if (en.maxHp > 1) {
+        const bw = 32;
+        const bh = 5;
+        const bx = en.x - bw / 2;
+        const by = en.y - en.r - 8;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(bx, by, Math.max(0, (bw * en.hp) / en.maxHp), bh);
+      }
+      ctx.restore();
     });
 
-    // Overlay de Cartas de Upgrade a cada 15s
-    if (st.choosingCard) {
-      ctx.fillStyle = 'rgba(10, 4, 24, 0.88)';
+    // 5. CHEFE: O Gerente do Banco
+    if (st.boss) {
+      const b = st.boss;
+      ctx.save();
+      ctx.fillStyle = '#7f1d1d';
+      ctx.strokeStyle = '#f87171';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '32px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.emoji, b.x, b.y);
+
+      const bossBarW = Math.min(420, width * 0.70);
+      const bossBarX = width / 2 - bossBarW / 2;
+      const bossBarY = 115;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.fillRect(bossBarX, bossBarY, bossBarW, 16);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(bossBarX, bossBarY, Math.max(0, (bossBarW * b.hp) / b.maxHp), 16);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bossBarX, bossBarY, bossBarW, 16);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 12px Fredoka, sans-serif';
+      ctx.fillText(`👹 ${b.name}: ${Math.max(0, Math.round(b.hp))}/${b.maxHp} HP`, width / 2, bossBarY + 12);
+      ctx.restore();
+    }
+
+    // 6. Projéteis Inimigos
+    st.enemyBullets.forEach((eb) => {
+      ctx.save();
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(eb.emoji || '💥', eb.x, eb.y);
+      ctx.restore();
+    });
+
+    // 7. Projéteis dos Jogadores
+    st.bullets.forEach((b) => {
+      ctx.save();
+      if (b.emoji) {
+        ctx.font = '18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(b.emoji, b.x, b.y);
+      } else if (b.kind === 'laser') {
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    // 8. ALIANÇAS ORBITAIS
+    ['p1', 'p2'].forEach((k) => {
+      const p = st[k];
+      if (p.weapons.rings) {
+        const ringCount = p.weapons.rings >= 2 ? 4 : 2;
+        const ringRad = 62;
+        for (let rIdx = 0; rIdx < ringCount; rIdx++) {
+          const rAng = st.orbitAngle + (rIdx * (Math.PI * 2 / ringCount));
+          const rx = p.x + Math.cos(rAng) * ringRad;
+          const ry = p.y + Math.sin(rAng) * ringRad;
+
+          ctx.save();
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(rx, ry, 9, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(rx, ry, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    });
+
+    // 9. Jogadores (Noivo e Noiva)
+    const p1Alpha = st.p1.invulnTimer > 0 ? (Math.sin(st.timeLeft * 30) > 0 ? 0.35 : 1) : 1;
+    ctx.save();
+    ctx.globalAlpha = p1Alpha;
+    ctxApi.drawGroom(st.p1.x, st.p1.y + 15, st.timeLeft * 8, 0.85, true);
+    ctx.restore();
+
+    const p2Alpha = st.p2.invulnTimer > 0 ? (Math.sin(st.timeLeft * 30) > 0 ? 0.35 : 1) : 1;
+    ctx.save();
+    ctx.globalAlpha = p2Alpha;
+    ctxApi.drawBride(st.p2.x, st.p2.y + 15, st.timeLeft * 8, 0.85, true);
+    ctx.restore();
+
+    // 10. HUD Superior
+    const hudW = Math.min(520, width * 0.88);
+    const hudX = width / 2 - hudW / 2;
+    const hudY = 74;
+
+    ctx.fillStyle = 'rgba(15, 10, 30, 0.85)';
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(hudX, hudY, hudW, 36, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    const hpBarW = 180;
+    const hpBarX = hudX + 16;
+    const hpBarY = hudY + 10;
+    ctx.fillStyle = '#374151';
+    ctx.fillRect(hpBarX, hpBarY, hpBarW, 16);
+    ctx.fillStyle = st.hp > 40 ? '#10b981' : st.hp > 20 ? '#f59e0b' : '#ef4444';
+    ctx.fillRect(hpBarX, hpBarY, Math.max(0, (hpBarW * st.hp) / st.maxHp), 16);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 11px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`❤️ ${Math.max(0, Math.round(st.hp))}/${st.maxHp} HP`, hpBarX + hpBarW / 2, hpBarY + 12);
+
+    if (st.shieldHp > 0) {
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '700 11px Fredoka, sans-serif';
+      ctx.fillText(`🛡️ ${Math.round(st.shieldHp)}`, hpBarX + hpBarW + 28, hpBarY + 12);
+    }
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 13px Fredoka, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`⏱️ ${st.timeLeft.toFixed(1)}s  |  💀 ${st.totalKills}`, hudX + hudW - 16, hudY + 23);
+
+    // 11. Ícones de Arsenal
+    this.drawArsenalIcons(ctx, st, 20, height - 48);
+
+    // 12. Overlay de Cartas de Upgrade
+    if (st.choosingCard && st.offeredCards.length > 0) {
+      ctx.fillStyle = 'rgba(10, 4, 24, 0.90)';
       ctx.fillRect(0, 0, width, height);
 
       ctx.fillStyle = '#ffd166';
-      ctx.font = '700 22px Fredoka, sans-serif';
-      ctx.fillText('✨ ESCOLHAM UMA CARTA DE UPGRADE! ✨', width / 2, height * 0.22);
+      ctx.font = '700 24px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✨ ESCOLHAM UM UPGRADE OU NOVA ARMA! ✨', width / 2, height * 0.22);
 
-      const cardW = Math.min(210, (width - 80) / 3);
-      const cardH = 190;
+      const cardW = Math.min(230, (width - 70) / 3);
+      const cardH = 220;
       const gap = 18;
       const startX = width / 2 - (cardW * 3 + gap * 2) / 2;
 
-      ROGUE_UPGRADES.forEach((c, idx) => {
+      st.offeredCards.forEach((c, idx) => {
         const cx = startX + idx * (cardW + gap);
         const cy = height * 0.32;
-        ctx.fillStyle = '#2d1b4e';
-        ctx.strokeStyle = '#ffd166';
+
+        ctx.fillStyle = '#24143e';
+        ctx.strokeStyle = idx === 0 ? '#38bdf8' : idx === 1 ? '#ffd166' : '#ec4899';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.roundRect(cx, cy, cardW, cardH, 14);
         ctx.fill();
         ctx.stroke();
 
+        ctx.font = '38px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(c.icon || '⚔️', cx + cardW / 2, cy + 50);
+
         ctx.fillStyle = '#ffffff';
-        ctx.font = '700 15px Fredoka, sans-serif';
-        ctx.fillText(c.title, cx + cardW / 2, cy + 50);
+        ctx.font = '700 16px Fredoka, sans-serif';
+        ctx.fillText(c.title, cx + cardW / 2, cy + 90);
 
-        ctx.fillStyle = '#cbb8e8';
-        ctx.font = '600 13px Fredoka, sans-serif';
-        ctx.fillText(c.desc, cx + cardW / 2, cy + 95);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '500 13px Fredoka, sans-serif';
+        this.wrapCardText(ctx, c.desc, cx + cardW / 2, cy + 125, cardW - 24, 17);
 
-        ctx.fillStyle = '#06d6a0';
+        ctx.fillStyle = '#10b981';
         ctx.font = '700 13px Fredoka, sans-serif';
-        ctx.fillText(`[Tecla ${idx + 1} ou Toque]`, cx + cardW / 2, cy + 150);
+        ctx.fillText(`[Tecla ${idx + 1} ou Toque]`, cx + cardW / 2, cy + cardH - 18);
       });
     }
+  },
+
+  drawArsenalIcons(ctx, st, x, y) {
+    const p1w = Object.keys(st.p1.weapons);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.70)';
+    ctx.strokeStyle = '#4b5563';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, 220, 36, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '700 11px Fredoka, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('ARSENAL:', x + 8, y + 22);
+
+    const icons = {
+      pen: '🖊️',
+      bouquet: '💐',
+      rings: '💍',
+      champagne: '🍾',
+      laser: '⚡'
+    };
+
+    let ox = x + 72;
+    p1w.forEach((wKey) => {
+      const ic = icons[wKey] || '⚔️';
+      const lvl = st.p1.weapons[wKey];
+      ctx.font = '16px sans-serif';
+      ctx.fillText(ic, ox, y + 24);
+      ctx.font = '700 10px Fredoka, sans-serif';
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText(`v${lvl}`, ox + 18, y + 23);
+      ox += 34;
+    });
+    ctx.restore();
+  },
+
+  wrapCardText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(' ');
+    let line = '';
+    let curY = y;
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + ' ';
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && n > 0) {
+        ctx.fillText(line, x, curY);
+        line = words[n] + ' ';
+        curY += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, x, curY);
   }
 };
+
 
 // ============================================================================
 // MINIGAME 3: PLATAFORMA COOPERATIVO (O CHÃO É LAVA DE BOLETOS)
@@ -2006,31 +2705,68 @@ const Minigame3_Plataforma = {
 };
 
 // ============================================================================
-// MINIGAME 4: JOGO DE TIRO ESTILO CONTRA (RUN & GUN)
+// MINIGAME 4: SOLAR WARRIOR (XAIN'D SLEENA ARCADE RUN & GUN)
+// Visual 100% Fiel à Imagem de Referência + Dificuldade Arcade Intensa!
 // ============================================================================
 const Minigame4_Contra = {
   id: 'mg4_contra',
   order: 4,
-  title: '4. CONTRA RUN & GUN: CASAL EM AÇÃO',
-  subtitle: 'Atirem nos Drones de Paparazzi, peguem cápsulas [S]/[L] e derrotem o Chefão!',
+  title: '4. SOLAR WARRIOR: RESGATE RUN & GUN',
+  subtitle: 'Inspirado em Xain\'d Sleena Arcade! Desafio Intenso: Cyber-Pods, Sand Jumpers e Dreadnought!',
   icon: '💥',
 
   onEnter(ctxApi) {
     const { width, height } = ctxApi.getViewport();
-    const groundY = height - 70;
+    const groundY = Math.floor(height * 0.73);
+
     ctxApi.mgState = {
       groundY,
-      lives: 5,
-      bossHp: 100,
-      bossMaxHp: 100,
-      bossY: groundY - 110,
-      p1: { x: 110, y: groundY, vy: 0, weapon: 'normal', fireTimer: 0 },
-      p2: { x: 175, y: groundY, vy: 0, weapon: 'normal', fireTimer: 0 },
+      score: 8700,
+      hiScore: 50000,
+      timeRemaining: 47.0, // Como na imagem: 0:47
+      damageGage: 82,      // Começa com pequeno dano como na barra da imagem
+      maxDamageGage: 100,
+      lives: 2,            // 2 capacetes no canto como na imagem
+      invulnTimer: 0,
+      p1: {
+        x: Math.floor(width * 0.44), // Posição próxima da pedra central como na foto
+        y: groundY,
+        vy: 0,
+        ducking: false,
+        jumping: false,
+        fireTimer: 0.1,
+        weapon: 'laser',
+        runCycle: 0
+      },
+      p2: {
+        x: Math.floor(width * 0.36),
+        y: groundY,
+        vy: 0,
+        ducking: false,
+        jumping: false,
+        fireTimer: 0.1,
+        weapon: 'laser',
+        runCycle: 0
+      },
+      p2Manual: false,
       bullets: [],
       enemyBullets: [],
-      drones: [],
+      bombs: [],
+      pods: [],
+      jumpers: [],
       powerups: [],
-      spawnTimer: 1.0
+      boss: null,
+      bossSpawned: false,
+      podSpawnTimer: 0.6,
+      jumperSpawnTimer: 1.8,
+      muzzleFlash1: 0,
+      muzzleFlash2: 0,
+      // Rochas alienígenas idênticas à imagem de referência
+      rocks: [
+        { x: width * 0.22, type: 'stacked_tower', w: 64, h: 108 },
+        { x: width * 0.50, type: 'round_mound', w: 88, h: 56 },
+        { x: width * 0.31, type: 'foreground_boulder', w: 52, h: 36 }
+      ]
     };
   },
 
@@ -2038,170 +2774,450 @@ const Minigame4_Contra = {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
-    st.groundY = height - 70;
+    st.groundY = Math.floor(height * 0.73);
 
     const keys = ctxApi.getKeys();
-    const gravity = 1400;
+    const gravity = 1580; // Gravidade ágil e rápida de arcade clássico
 
-    [
-      { p: st.p1, left: keys.p1Left, right: keys.p1Right, jump: keys.p1Up, color: '#4cc9f0' },
-      { p: st.p2, left: keys.p2Left, right: keys.p2Right, jump: keys.p2Up, color: '#ff5d8f' }
-    ].forEach(({ p, left, right, jump, color }) => {
-      if (left) p.x -= 230 * dt;
-      if (right) p.x += 230 * dt;
-      p.x = Math.max(45, Math.min(width * 0.65, p.x));
+    // Cronômetro da fase
+    st.timeRemaining = Math.max(0, st.timeRemaining - dt);
+    if (st.timeRemaining <= 0 && (!st.boss || st.boss.hp <= 0)) {
+      ctxApi.confetti(50);
+      ctxApi.victory('Missão Solar Warrior Cumprida! O Casal conquistou o planeta alienígena!');
+      return;
+    }
 
-      if (jump && p.y >= st.groundY - 2) {
-        p.vy = -590;
-        ctxApi.sfx.playJump();
+    if (st.invulnTimer > 0) st.invulnTimer -= dt;
+    if (st.muzzleFlash1 > 0) st.muzzleFlash1 -= dt;
+    if (st.muzzleFlash2 > 0) st.muzzleFlash2 -= dt;
+
+    // Detecção inteligente de co-op local: se as teclas de P1 e P2 forem usadas juntas
+    if ((keys.p1Left || keys.p1Right || keys.p1Up || keys.p1Down) && (keys.p2Left || keys.p2Right || keys.p2Up || keys.p2Down)) {
+      st.p2Manual = true;
+    }
+
+    // 1. CONTROLE DO JOGADOR 1 (Noivo 1P)
+    const p1 = st.p1;
+    let p1Move = 0;
+    const moveLeft = keys.p1Left || (!st.p2Manual && keys.p2Left);
+    const moveRight = keys.p1Right || (!st.p2Manual && keys.p2Right);
+    if (moveLeft) { p1.x -= 260 * dt; p1Move = -1; }
+    if (moveRight) { p1.x += 260 * dt; p1Move = 1; }
+    p1.x = Math.max(40, Math.min(width * 0.70, p1.x));
+    if (p1Move !== 0) p1.runCycle += dt * 16;
+
+    p1.ducking = (keys.p1Down || (!st.p2Manual && keys.p2Down)) && !p1.jumping;
+
+    // Salto ágil (W, Cima, ou Espaço)
+    const jumpReq1 = keys.p1Up || (!st.p2Manual && (keys.p2Up || keys.p1Jump || keys.p2Jump));
+    if (jumpReq1 && !p1.jumping && p1.y >= st.groundY - 2) {
+      p1.vy = -640;
+      p1.jumping = true;
+      if (ctxApi.sfx?.playJump) ctxApi.sfx.playJump(false);
+    }
+    p1.y += p1.vy * dt;
+    p1.vy += gravity * dt;
+    if (p1.y >= st.groundY) {
+      p1.y = st.groundY;
+      p1.vy = 0;
+      p1.jumping = false;
+    }
+
+    // Disparo Contínuo P1
+    p1.fireTimer -= dt;
+    if (p1.fireTimer <= 0) {
+      p1.fireTimer = p1.weapon === 'spread' ? 0.20 : 0.14;
+      this.fireLasers(p1, 'p1', st, ctxApi);
+      st.muzzleFlash1 = 0.08;
+    }
+
+    // 2. CONTROLE DO JOGADOR 2 (Noiva 2P)
+    const p2 = st.p2;
+    if (st.p2Manual) {
+      let p2Move = 0;
+      if (keys.p2Left) { p2.x -= 260 * dt; p2Move = -1; }
+      if (keys.p2Right) { p2.x += 260 * dt; p2Move = 1; }
+      p2.x = Math.max(40, Math.min(width * 0.70, p2.x));
+      if (p2Move !== 0) p2.runCycle += dt * 16;
+
+      p2.ducking = !!keys.p2Down && !p2.jumping;
+
+      if (keys.p2Up && !p2.jumping && p2.y >= st.groundY - 2) {
+        p2.vy = -640;
+        p2.jumping = true;
+        if (ctxApi.sfx?.playJump) ctxApi.sfx.playJump(true);
       }
-      p.y += p.vy * dt;
-      p.vy += gravity * dt;
-      if (p.y > st.groundY) {
-        p.y = st.groundY;
-        p.vy = 0;
-      }
-
-      // Disparo contínuo estilo Contra
-      p.fireTimer -= dt;
-      if (p.fireTimer <= 0) {
-        p.fireTimer = p.weapon === 'laser' ? 0.16 : 0.24;
-        if (p.weapon === 'spread') {
-          [-0.22, 0, 0.22].forEach((ang) => {
-            st.bullets.push({
-              x: p.x + 18,
-              y: p.y - 32,
-              vx: Math.cos(ang) * 540,
-              vy: Math.sin(ang) * 540,
-              dmg: 2.2,
-              color
-            });
-          });
-        } else {
-          st.bullets.push({
-            x: p.x + 18,
-            y: p.y - 32,
-            vx: 620,
-            vy: 0,
-            dmg: p.weapon === 'laser' ? 3.5 : 2.0,
-            color: p.weapon === 'laser' ? '#ffd166' : color
-          });
-        }
-      }
-    });
-
-    // Chefão flutua na direita
-    const bossX = width - 95;
-    st.bossY = st.groundY - 125 + Math.sin(ctxApi.getTime() * 2.5) * 65;
-
-    // Spawna Drones e Power-Ups (S = Spread, L = Laser)
-    st.spawnTimer -= dt;
-    if (st.spawnTimer <= 0) {
-      st.spawnTimer = 1.25;
-      st.drones.push({
-        x: bossX - 30,
-        y: st.groundY - 40 - Math.random() * 140,
-        vx: -190 - Math.random() * 70
-      });
-
-      if (Math.random() < 0.38) {
-        const kind = Math.random() < 0.5 ? 'spread' : 'laser';
-        st.powerups.push({
-          x: width - 80,
-          y: st.groundY - 95,
-          vx: -140,
-          kind,
-          label: kind === 'spread' ? 'S' : 'L'
-        });
+    } else {
+      // IA cooperativa: protege a retaguarda e cobre tiros altos/baixos
+      const targetDist = 70;
+      const targetX = p1.x - targetDist;
+      p2.x += (targetX - p2.x) * 4.5 * dt;
+      p2.runCycle = p1.runCycle;
+      p2.ducking = p1.ducking;
+      if (p1.jumping && !p2.jumping && Math.random() < 0.35) {
+        p2.vy = -640;
+        p2.jumping = true;
       }
     }
 
-    // Atualiza Power-ups
-    for (let i = st.powerups.length - 1; i >= 0; i--) {
-      const pw = st.powerups[i];
-      pw.x += pw.vx * dt;
-      [st.p1, st.p2].forEach((p) => {
-        if (Math.hypot(p.x - pw.x, (p.y - 30) - pw.y) < 34) {
-          p.weapon = pw.kind;
-          ctxApi.sfx.playAltarFanfare();
-          ctxApi.floatingText(p.x, p.y - 65, `ARMA [${pw.label}] ATIVADA!`, '#ffd166');
-          pw.collected = true;
-        }
-      });
-      if (pw.collected || pw.x < -40) st.powerups.splice(i, 1);
+    p2.y += p2.vy * dt;
+    p2.vy += gravity * dt;
+    if (p2.y >= st.groundY) {
+      p2.y = st.groundY;
+      p2.vy = 0;
+      p2.jumping = false;
     }
 
-    // Atualiza tiros dos jogadores
+    // Disparo Contínuo P2
+    p2.fireTimer -= dt;
+    if (p2.fireTimer <= 0) {
+      p2.fireTimer = p2.weapon === 'spread' ? 0.20 : 0.14;
+      this.fireLasers(p2, 'p2', st, ctxApi);
+      st.muzzleFlash2 = 0.08;
+    }
+
+    // 3. ATUALIZAÇÃO DOS TIROS DOS JOGADORES (LASERS DUPLOS COM AURA VERDE)
     for (let i = st.bullets.length - 1; i >= 0; i--) {
       const b = st.bullets[i];
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      // Acertou o Chefão
-      if (Math.hypot(b.x - bossX, b.y - st.bossY) < 52) {
-        st.bossHp -= b.dmg;
-        ctxApi.particles(b.x, b.y, '#ffd166', 4, 90);
-        st.bullets.splice(i, 1);
-        if (st.bossHp <= 0) {
-          ctxApi.victory('Chefão da Papelada e Paparazzi destruído no modo Contra!');
-          return;
+      // Colisão com o Boss Dreadnought
+      if (st.boss) {
+        if (
+          b.x >= st.boss.x - st.boss.w / 2 &&
+          b.x <= st.boss.x + st.boss.w / 2 &&
+          b.y >= st.boss.y - st.boss.h / 2 &&
+          b.y <= st.boss.y + st.boss.h / 2
+        ) {
+          st.boss.hp -= b.dmg;
+          st.score += 200;
+          ctxApi.particles(b.x, b.y, '#ffd166', 4, 110);
+          st.bullets.splice(i, 1);
+          if (st.boss.hp <= 0) {
+            ctxApi.confetti(60);
+            ctxApi.victory('Dreadnought Fortress Alienígena destruído com maestria pelo casal!');
+            return;
+          }
+          continue;
         }
-        continue;
       }
 
-      if (b.x > width + 30) st.bullets.splice(i, 1);
-    }
-
-    // Atualiza Drones Inimigos
-    for (let i = st.drones.length - 1; i >= 0; i--) {
-      const dr = st.drones[i];
-      dr.x += dr.vx * dt;
-
-      // Checa se tiro matou o drone
-      let hit = false;
-      for (let j = st.bullets.length - 1; j >= 0; j--) {
-        const b = st.bullets[j];
-        if (Math.hypot(dr.x - b.x, dr.y - b.y) < 26) {
-          st.bullets.splice(j, 1);
-          hit = true;
+      // Colisão com Cyber-Pods
+      let hitPod = false;
+      for (let j = st.pods.length - 1; j >= 0; j--) {
+        const pod = st.pods[j];
+        if (Math.hypot(b.x - pod.x, b.y - pod.y) < pod.r + 15) {
+          pod.hp -= b.dmg;
+          ctxApi.particles(b.x, b.y, '#f59e0b', 5, 120);
+          if (pod.hp <= 0) {
+            st.score += 350;
+            ctxApi.particles(pod.x, pod.y, '#ef4444', 18, 200);
+            if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+            // Drop de Powerup S / L
+            if (Math.random() < 0.32) {
+              const kind = Math.random() < 0.5 ? 'spread' : 'laser';
+              st.powerups.push({
+                x: pod.x,
+                y: pod.y,
+                vx: -120,
+                vy: 0,
+                kind,
+                label: kind === 'spread' ? 'S' : 'L'
+              });
+            }
+            st.pods.splice(j, 1);
+          }
+          hitPod = true;
           break;
         }
       }
-      if (hit) {
-        ctxApi.particles(dr.x, dr.y, '#ff5d8f', 10, 150);
-        st.drones.splice(i, 1);
+      if (hitPod) {
+        st.bullets.splice(i, 1);
         continue;
       }
 
-      // Checa se bateu em P1 ou P2
-      const hitP1 = Math.hypot(dr.x - st.p1.x, dr.y - (st.p1.y - 30)) < 28;
-      const hitP2 = Math.hypot(dr.x - st.p2.x, dr.y - (st.p2.y - 30)) < 28;
-      if (hitP1 || hitP2) {
-        st.lives -= 1;
-        ctxApi.sfx.playBounce();
-        ctxApi.particles(dr.x, dr.y, '#ff3355', 16, 180);
-        st.drones.splice(i, 1);
-        if (st.lives <= 0) {
-          ctxApi.batatinha('Os drones de paparazzi derrotaram o casal!', { x: dr.x, y: dr.y, r: 44 });
-          return;
+      // Colisão com Sand Jumpers
+      let hitJumper = false;
+      for (let c = st.jumpers.length - 1; c >= 0; c--) {
+        const jm = st.jumpers[c];
+        if (Math.hypot(b.x - jm.x, b.y - jm.y) < jm.r + 14) {
+          st.score += 250;
+          ctxApi.particles(jm.x, jm.y, '#a855f7', 14, 180);
+          st.jumpers.splice(c, 1);
+          hitJumper = true;
+          break;
         }
+      }
+      if (hitJumper) {
+        st.bullets.splice(i, 1);
         continue;
       }
 
-      if (dr.x < -40) st.drones.splice(i, 1);
+      if (b.x > width + 40 || b.x < -30 || b.y < -30 || b.y > height + 30) {
+        st.bullets.splice(i, 1);
+      }
+    }
+
+    // 4. ATUALIZAÇÃO DOS CYBER-PODS FLUTUANTES (PODS EM FORMAÇÃO DUPLA/TRIPLA)
+    st.podSpawnTimer -= dt;
+    if (st.podSpawnTimer <= 0 && (!st.boss || st.boss.hp > 0)) {
+      st.podSpawnTimer = 1.05 + Math.random() * 0.8; // Spawns mais rápidos e agressivos!
+
+      // Spawna em pares ou trios a alturas diferentes (como na foto de referência)
+      const count = Math.random() < 0.45 ? 2 : 1;
+      for (let p = 0; p < count; p++) {
+        const podY = st.groundY - 55 - (p * 50) - Math.random() * 60;
+        st.pods.push({
+          x: width + 30 + (p * 45),
+          y: podY,
+          baseY: podY,
+          r: 16,
+          hp: 2,
+          speed: 175 + Math.random() * 55,
+          wobble: Math.random() * Math.PI * 2,
+          shootTimer: 1.1 + Math.random() * 1.3
+        });
+      }
+    }
+
+    for (let i = st.pods.length - 1; i >= 0; i--) {
+      const pod = st.pods[i];
+      pod.x -= pod.speed * dt;
+      pod.wobble += dt * 4.2;
+      pod.y = pod.baseY + Math.sin(pod.wobble) * 22;
+
+      // Disparo do Pod: Projéteis de plasma em direção ao casal
+      pod.shootTimer -= dt;
+      if (pod.shootTimer <= 0 && pod.x < width - 40 && pod.x > 90) {
+        pod.shootTimer = 1.9 + Math.random() * 1.1;
+        const target = Math.random() < 0.5 ? st.p1 : st.p2;
+        const ang = Math.atan2((target.y - 25) - pod.y, target.x - pod.x);
+        st.enemyBullets.push({
+          x: pod.x - 14,
+          y: pod.y,
+          vx: Math.cos(ang) * 330, // Tiros mais velozes!
+          vy: Math.sin(ang) * 330,
+          r: 7
+        });
+      }
+
+      // Colisão de contato com o jogador
+      if (st.invulnTimer <= 0) {
+        const hit1 = Math.hypot(pod.x - p1.x, pod.y - (p1.y - 28)) < pod.r + 20;
+        const hit2 = Math.hypot(pod.x - p2.x, pod.y - (p2.y - 28)) < pod.r + 20;
+        if (hit1 || hit2) {
+          this.applyDamage(25, ctxApi);
+        }
+      }
+
+      if (pod.x < -40) st.pods.splice(i, 1);
+    }
+
+    // 5. ATUALIZAÇÃO DOS SAND JUMPERS (INSETOS QUE SALTAM EM VOCÊ!)
+    st.jumperSpawnTimer -= dt;
+    if (st.jumperSpawnTimer <= 0 && (!st.boss || st.boss.hp > 0)) {
+      st.jumperSpawnTimer = 2.1 + Math.random() * 1.6;
+      st.jumpers.push({
+        x: width + 25,
+        y: st.groundY - 14,
+        vy: 0,
+        speed: 210 + Math.random() * 60,
+        r: 15,
+        hasLeaped: false
+      });
+    }
+
+    for (let c = st.jumpers.length - 1; c >= 0; c--) {
+      const jm = st.jumpers[c];
+      jm.x -= jm.speed * dt;
+
+      // Salto repentino quando se aproxima do jogador
+      const distToP1 = Math.abs(jm.x - p1.x);
+      if (!jm.hasLeaped && distToP1 < 170 && distToP1 > 80 && Math.random() < 0.7) {
+        jm.hasLeaped = true;
+        jm.vy = -490;
+        if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+      }
+
+      jm.y += jm.vy * dt;
+      jm.vy += gravity * dt;
+      if (jm.y >= st.groundY - 14) {
+        jm.y = st.groundY - 14;
+        jm.vy = 0;
+      }
+
+      if (st.invulnTimer <= 0) {
+        const hit1 = Math.hypot(jm.x - p1.x, jm.y - (p1.y - 20)) < jm.r + 18;
+        const hit2 = Math.hypot(jm.x - p2.x, jm.y - (p2.y - 20)) < jm.r + 18;
+        if (hit1 || hit2) {
+          this.applyDamage(22, ctxApi);
+        }
+      }
+
+      if (jm.x < -30) st.jumpers.splice(c, 1);
+    }
+
+    // 6. ATUALIZAÇÃO DOS TIROS INIMIGOS DE PLASMA
+    for (let k = st.enemyBullets.length - 1; k >= 0; k--) {
+      const eb = st.enemyBullets[k];
+      eb.x += eb.vx * dt;
+      eb.y += eb.vy * dt;
+
+      if (st.invulnTimer <= 0) {
+        const hit1 = Math.hypot(eb.x - p1.x, eb.y - (p1.y - (p1.ducking ? 14 : 28))) < eb.r + 16;
+        const hit2 = Math.hypot(eb.x - p2.x, eb.y - (p2.y - (p2.ducking ? 14 : 28))) < eb.r + 16;
+        if (hit1 || hit2) {
+          this.applyDamage(20, ctxApi);
+          st.enemyBullets.splice(k, 1);
+          continue;
+        }
+      }
+
+      if (eb.x < -30 || eb.x > width + 30 || eb.y > st.groundY + 12 || eb.y < -30) {
+        st.enemyBullets.splice(k, 1);
+      }
+    }
+
+    // 7. POWER-UPS [S] E [L]
+    for (let p = st.powerups.length - 1; p >= 0; p--) {
+      const pw = st.powerups[p];
+      pw.x += pw.vx * dt;
+
+      const pick1 = Math.hypot(pw.x - p1.x, pw.y - (p1.y - 25)) < 32;
+      const pick2 = Math.hypot(pw.x - p2.x, pw.y - (p2.y - 25)) < 32;
+      if (pick1 || pick2) {
+        p1.weapon = pw.kind;
+        p2.weapon = pw.kind;
+        ctxApi.confetti(20);
+        if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+        ctxApi.floatingText(pw.x, pw.y - 30, `ARMA [${pw.label}] ATIVADA!`, '#ffd166');
+        st.powerups.splice(p, 1);
+        continue;
+      }
+      if (pw.x < -30) st.powerups.splice(p, 1);
+    }
+
+    // 8. CHEFE FINAL: DREADNOUGHT FORTRESS (SURGE AOS 20s FINAIS)
+    if (st.timeRemaining <= 20.0 && !st.bossSpawned) {
+      st.bossSpawned = true;
+      st.boss = {
+        x: width + 90,
+        targetX: width - 120,
+        y: st.groundY - 115,
+        w: 125,
+        h: 135,
+        hp: 160,
+        maxHp: 160,
+        shootTimer: 1.6
+      };
+      ctxApi.floatingText(width / 2, height * 0.35, '⚠️ ALERTA MÁXIMO: DREADNOUGHT FORTRESS! ⚠️', '#ef4444');
+      if (ctxApi.sfx?.playBatatinha) ctxApi.sfx.playBatatinha();
+    }
+
+    if (st.boss) {
+      const b = st.boss;
+      if (b.x > b.targetX) b.x -= 75 * dt;
+      b.y = (st.groundY - 115) + Math.sin(ctxApi.getTime() * 2.4) * 60;
+
+      b.shootTimer -= dt;
+      if (b.shootTimer <= 0) {
+        b.shootTimer = 1.5;
+        // Rajada quádrupla de plasma com dispersão pesada!
+        [-0.30, -0.10, 0.10, 0.30].forEach((off) => {
+          st.enemyBullets.push({
+            x: b.x - b.w / 2,
+            y: b.y + 12,
+            vx: -350,
+            vy: Math.sin(off) * 260,
+            r: 9
+          });
+        });
+        if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+      }
+    }
+  },
+
+  fireLasers(p, who, st, ctxApi) {
+    const gunY = p.ducking ? p.y - 14 : p.y - 32;
+    const gunX = p.x + 24;
+
+    if (p.weapon === 'spread') {
+      [-0.18, 0, 0.18].forEach((ang) => {
+        st.bullets.push({
+          x: gunX,
+          y: gunY,
+          vx: Math.cos(ang) * 660,
+          vy: Math.sin(ang) * 660,
+          dmg: 2.2,
+          kind: 'spread',
+          color: who === 'p1' ? '#38bdf8' : '#ec4899'
+        });
+      });
+    } else {
+      // Lasers Duplos Exatos da Imagem: Feixes brancos com halo verde/ciano (--  --)
+      st.bullets.push({
+        x: gunX,
+        y: gunY - 2,
+        vx: 780,
+        vy: 0,
+        dmg: 2.0,
+        kind: 'laser',
+        color: '#ffffff',
+        glow: '#22c55e'
+      });
+      st.bullets.push({
+        x: gunX + 28,
+        y: gunY - 2,
+        vx: 780,
+        vy: 0,
+        dmg: 2.0,
+        kind: 'laser',
+        color: '#ffffff',
+        glow: '#22c55e'
+      });
+    }
+    if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+  },
+
+  applyDamage(amount, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st || st.invulnTimer > 0) return;
+
+    st.damageGage -= amount;
+    st.invulnTimer = 0.65;
+    if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+    ctxApi.particles(st.p1.x, st.p1.y - 25, '#ef4444', 16, 200);
+
+    if (st.damageGage <= 0) {
+      st.lives--;
+      if (st.lives > 0) {
+        st.damageGage = st.maxDamageGage;
+        ctxApi.floatingText(st.p1.x, st.p1.y - 50, `VIDA PERDIDA! RESTAM ${st.lives}`, '#ffd166');
+      } else {
+        st.damageGage = 0;
+        ctxApi.batatinha('O casal foi aniquilado no planeta alienígena do Solar Warrior!', {
+          x: st.p1.x,
+          y: st.p1.y - 25,
+          r: 50
+        });
+      }
     }
   },
 
   onKeyDown(code, ctxApi) {
     const st = ctxApi.mgState;
     if (!st) return;
-    if (code === 'KeyW' && st.p1.y >= st.groundY - 2) {
-      st.p1.vy = -590;
-      ctxApi.sfx.playJump(false);
+
+    if ((code === 'KeyW' || code === 'Space' || (!st.p2Manual && code === 'ArrowUp')) && !st.p1.jumping && st.p1.y >= st.groundY - 2) {
+      st.p1.vy = -640;
+      st.p1.jumping = true;
+      if (ctxApi.sfx?.playJump) ctxApi.sfx.playJump(false);
     }
-    if ((code === 'ArrowUp' || code === 'Space') && st.p2.y >= st.groundY - 2) {
-      st.p2.vy = -590;
-      ctxApi.sfx.playJump(true);
+    if ((code === 'ArrowUp' || (st.p2Manual && code === 'Space')) && !st.p2.jumping && st.p2.y >= st.groundY - 2) {
+      st.p2.vy = -640;
+      st.p2.jumping = true;
+      if (ctxApi.sfx?.playJump) ctxApi.sfx.playJump(true);
     }
   },
 
@@ -2210,80 +3226,566 @@ const Minigame4_Contra = {
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
 
-    ctx.fillStyle = '#120924';
-    ctx.fillRect(0, 0, width, height);
+    // 1. CÉU ALIENÍGENA COM SCANLINES (GRADIENTE IDÊNTICO À FOTO DE REFERÊNCIA)
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, st.groundY);
+    skyGrad.addColorStop(0, '#2c3c54');
+    skyGrad.addColorStop(0.35, '#445b77');
+    skyGrad.addColorStop(0.75, '#6e8a9d');
+    skyGrad.addColorStop(1, '#8aaab8');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, width, st.groundY);
 
-    // Chão metálico estilo Contra
-    ctx.fillStyle = '#334155';
+    // 2. DUAS LUAS COM CRATERAS (EXATAMENTE COMO NA FOTO)
+    // Lua Grande com Brilho Violeta
+    const moon1X = width * 0.64;
+    const moon1Y = height * 0.22;
+    const moon1R = 48;
+
+    ctx.save();
+    ctx.shadowBlur = 24;
+    ctx.shadowColor = 'rgba(216, 200, 235, 0.55)';
+    ctx.fillStyle = '#dcd0ec';
+    ctx.beginPath();
+    ctx.arc(moon1X, moon1Y, moon1R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Textura e crateras esféricas
+    ctx.fillStyle = '#bda8d6';
+    [
+      { ox: -14, oy: -10, r: 10 },
+      { ox: 16, oy: -16, r: 8 },
+      { ox: 8, oy: 15, r: 13 },
+      { ox: -20, oy: 18, r: 7 },
+      { ox: 22, oy: 6, r: 6 }
+    ].forEach((c) => {
+      ctx.beginPath();
+      ctx.arc(moon1X + c.ox, moon1Y + c.oy, c.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+
+    // Lua Pequena (Superior Direita)
+    const moon2X = width * 0.81;
+    const moon2Y = height * 0.11;
+    const moon2R = 21;
+
+    ctx.save();
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = 'rgba(205, 218, 245, 0.5)';
+    ctx.fillStyle = '#cad6f2';
+    ctx.beginPath();
+    ctx.arc(moon2X, moon2Y, moon2R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#a6b8de';
+    ctx.beginPath();
+    ctx.arc(moon2X - 4, moon2Y - 4, 5, 0, Math.PI * 2);
+    ctx.arc(moon2X + 5, moon2Y + 4, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 3. MONTANHAS / DUNAS DE TERRACOTA NO HORIZONTE
+    ctx.save();
+    // Camada distante
+    ctx.fillStyle = '#8a523d';
+    ctx.beginPath();
+    ctx.moveTo(0, st.groundY);
+    for (let x = 0; x <= width; x += 30) {
+      const my = (st.groundY - 50) + Math.sin(x * 0.009) * 20 + Math.cos(x * 0.02) * 12;
+      ctx.lineTo(x, my);
+    }
+    ctx.lineTo(width, st.groundY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Camada intermediária com crista iluminada
+    ctx.fillStyle = '#a6674c';
+    ctx.beginPath();
+    ctx.moveTo(0, st.groundY);
+    for (let x = 0; x <= width; x += 25) {
+      const my = (st.groundY - 28) + Math.sin(x * 0.016 + 1.2) * 14 + Math.cos(x * 0.035) * 8;
+      ctx.lineTo(x, my);
+    }
+    ctx.lineTo(width, st.groundY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 4. CHÃO DE AREIA DO DESERTO COM RASTERIZAÇÃO HORIZONTAL
+    ctx.fillStyle = '#b77755';
     ctx.fillRect(0, st.groundY, width, height - st.groundY);
-    ctx.fillStyle = '#ffd166';
-    ctx.fillRect(0, st.groundY, width, 4);
 
-    // HUD Vidas + Barra do Chefão
-    ctx.font = '700 15px Fredoka, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#ff5d8f';
-    ctx.fillText(`❤️ VIDAS DA EQUIPE: ${'❤️'.repeat(Math.max(0, st.lives))}`, 24, 90);
+    // Linhas finas de scanline no solo de areia
+    ctx.fillStyle = '#9c5e40';
+    for (let y = st.groundY; y < height; y += 8) {
+      ctx.fillRect(0, y, width, 2);
+    }
+    ctx.fillStyle = '#c98865';
+    for (let y = st.groundY + 4; y < height; y += 8) {
+      ctx.fillRect(0, y, width, 1.5);
+    }
 
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#1f2937';
-    ctx.fillRect(width / 2 - 140, 74, 280, 20);
-    ctx.fillStyle = '#ef4444';
-    ctx.fillRect(width / 2 - 138, 76, Math.max(0, (276 * st.bossHp) / st.bossMaxHp), 16);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '700 12px Fredoka, sans-serif';
-    ctx.fillText(`🤖 CHEFÃO MEC-BUFFET: ${Math.max(0, Math.round(st.bossHp))}%`, width / 2, 88);
+    // 5. ROCHAS DE CALCÁRIO BRANCAS COM SOMBRA PÚRPURA DIAGONAL (IDÊNTICAS À FOTO)
+    st.rocks.forEach((rk) => {
+      this.drawLimestoneRock(ctx, rk.x, st.groundY, rk.w, rk.h, rk.type);
+    });
 
-    // Personagens
-    ctxApi.drawGroom(st.p1.x, st.p1.y, ctxApi.getTime() * 10, 0.9, true);
-    ctxApi.drawBride(st.p2.x, st.p2.y, ctxApi.getTime() * 10, 0.9, true);
-
-    // Cápsulas Power-Up (S e L)
+    // 6. POWER-UPS [S] e [L]
     st.powerups.forEach((pw) => {
-      ctx.fillStyle = '#eab308';
+      ctx.save();
+      ctx.fillStyle = pw.kind === 'spread' ? '#ef4444' : '#38bdf8';
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(pw.x, pw.y, 18, 0, Math.PI * 2);
+      ctx.arc(pw.x, pw.y, 16, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#111827';
-      ctx.font = '700 16px "Press Start 2P", monospace';
-      ctx.fillText(pw.label, pw.x, pw.y + 5);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 14px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pw.label, pw.x, pw.y + 1);
+      ctx.restore();
     });
 
-    // Tiros
+    // 7. CYBER-PODS METÁLICOS FLUTUANTES (IGUAIS AOS DA IMAGEM)
+    st.pods.forEach((pod) => {
+      this.drawCyberPod(ctx, pod.x, pod.y, pod.r);
+    });
+
+    // 8. SAND JUMPERS (INSETOS ALIENÍGENAS)
+    st.jumpers.forEach((jm) => {
+      ctx.save();
+      ctx.fillStyle = '#7e22ce';
+      ctx.beginPath();
+      ctx.arc(jm.x, jm.y - 6, jm.r, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Olhos
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(jm.x - 5, jm.y - 8, 3, 0, Math.PI * 2);
+      ctx.arc(jm.x + 3, jm.y - 8, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Patas
+      ctx.strokeStyle = '#581c87';
+      ctx.lineWidth = 2.5;
+      [-8, 0, 8].forEach((lx) => {
+        ctx.beginPath();
+        ctx.moveTo(jm.x + lx, jm.y - 2);
+        ctx.lineTo(jm.x + lx - 4, jm.y + 8);
+        ctx.stroke();
+      });
+      ctx.restore();
+    });
+
+    // 9. TIROS INIMIGOS (Esferas de Plasma Vermelho)
+    st.enemyBullets.forEach((eb) => {
+      ctx.save();
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#ef4444';
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath();
+      ctx.arc(eb.x, eb.y, eb.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(eb.x, eb.y, eb.r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // 10. TIROS DOS JOGADORES (LASERS DUPLOS HORIZONTAIS COM AURA VERDE -- --)
     st.bullets.forEach((b) => {
-      ctx.fillStyle = b.color;
+      ctx.save();
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = b.glow || '#22c55e';
+
+      // Halo verde externo
+      ctx.fillStyle = b.glow || '#22c55e';
       ctx.beginPath();
-      ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+      ctx.roundRect(b.x - 14, b.y - 4, 28, 8, 4);
       ctx.fill();
+
+      // Feixe central branco brilhante
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(b.x - 11, b.y - 2, 22, 4, 2);
+      ctx.fill();
+      ctx.restore();
     });
 
-    // Drones Inimigos
-    st.drones.forEach((dr) => {
-      ctx.fillStyle = '#dc2626';
-      ctx.beginPath();
-      ctx.arc(dr.x, dr.y, 20, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = '22px sans-serif';
-      ctx.fillText('📸', dr.x, dr.y + 6);
-    });
+    // 11. PERSONAGENS (SOLDIER COMMANDO COM ARMADURA DA FOTO)
+    const p1Alpha = st.invulnTimer > 0 && Math.sin(ctxApi.getTime() * 30) > 0 ? 0.35 : 1;
+    ctx.save();
+    ctx.globalAlpha = p1Alpha;
+    this.drawSpaceSoldier(ctx, st.p1, 'noivo');
+    ctx.restore();
 
-    // Chefão Gigante na Direita
-    const bossX = width - 95;
-    ctx.fillStyle = '#7c2d12';
-    ctx.strokeStyle = '#ffd166';
-    ctx.lineWidth = 4;
+    ctx.save();
+    ctx.globalAlpha = p1Alpha;
+    this.drawSpaceSoldier(ctx, st.p2, 'noiva');
+    ctx.restore();
+
+    // Muzzle Flash com labareda curva laranja/amarela (como na arma da foto)
+    if (st.muzzleFlash1 > 0) this.drawArcadeMuzzleFlash(ctx, st.p1.x + 30, st.p1.ducking ? st.p1.y - 14 : st.p1.y - 32);
+    if (st.muzzleFlash2 > 0) this.drawArcadeMuzzleFlash(ctx, st.p2.x + 30, st.p2.ducking ? st.p2.y - 14 : st.p2.y - 32);
+
+    // 12. BOSS DREADNOUGHT
+    if (st.boss) {
+      this.drawBossDreadnought(ctx, st.boss);
+    }
+
+    // 13. HUD ARCADE IDÊNTICO À IMAGEM DE REFERÊNCIA
+    this.drawExactArcadeHUD(ctx, st, width, height);
+
+    // 14. EFEITO SUAVE DE SCANLINES CRT ARCADE
+    this.drawCRTScanlines(ctx, width, height);
+  },
+
+  drawLimestoneRock(ctx, x, y, w, h, type) {
+    ctx.save();
+    // Sombra diagonal azul-púrpura no chão (exata da imagem)
+    ctx.fillStyle = 'rgba(68, 50, 80, 0.75)';
     ctx.beginPath();
-    ctx.roundRect(bossX - 48, st.bossY - 55, 96, 110, 16);
+    ctx.ellipse(x + w * 0.30, y + 6, w * 0.65, 8, -0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (type === 'stacked_tower') {
+      // Rocha da esquerda: Coluna alta de segmentos empilhados bulbosos
+      ctx.fillStyle = '#f4ece1';
+      ctx.strokeStyle = '#6e5645';
+      ctx.lineWidth = 2.5;
+
+      // Segmento Base
+      ctx.beginPath();
+      ctx.ellipse(x, y - 22, w * 0.46, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Segmento Central
+      ctx.beginPath();
+      ctx.ellipse(x, y - 56, w * 0.40, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Segmento Topo
+      ctx.beginPath();
+      ctx.ellipse(x, y - 86, w * 0.34, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Luz branca especular
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(x - 8, y - 88, 12, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'round_mound') {
+      // Rocha do meio: Módulo arredondado suave onde o soldado se apoia
+      ctx.fillStyle = '#f4ece1';
+      ctx.strokeStyle = '#6e5645';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y - h * 0.45, w * 0.46, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x - w * 0.16, y - h * 0.58, w * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Rocha do primeiro plano: Pequeno rochedo arredondado
+      ctx.fillStyle = '#f4ece1';
+      ctx.strokeStyle = '#6e5645';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y - h * 0.42, w * 0.44, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+
+  drawCyberPod(ctx, x, y, r) {
+    ctx.save();
+    // Sombra sutil no chão
+    ctx.fillStyle = 'rgba(68, 50, 80, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 48, r * 0.85, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cápsula Metálica Cilíndrica Bronze/Aço Escuro
+    const podGrad = ctx.createLinearGradient(x - r, y, x + r, y);
+    podGrad.addColorStop(0, '#221d1b');
+    podGrad.addColorStop(0.3, '#685c52');
+    podGrad.addColorStop(0.7, '#968679');
+    podGrad.addColorStop(1, '#221d1b');
+
+    ctx.fillStyle = podGrad;
+    ctx.strokeStyle = '#120f0d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x - r, y - r * 1.3, r * 2, r * 2.6, 7);
     ctx.fill();
     ctx.stroke();
-    ctx.font = '46px sans-serif';
-    ctx.fillText('👹', bossX, st.bossY + 12);
+
+    // 3 Fendas Horizontais Vermelhas (Como na foto de referência)
+    ctx.fillStyle = '#ef4444';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#ef4444';
+    [-r * 0.6, 0, r * 0.6].forEach((oy) => {
+      ctx.fillRect(x - r * 0.65, y + oy - 1.5, r * 1.3, 3);
+    });
+    ctx.restore();
+  },
+
+  drawSpaceSoldier(ctx, p, role) {
+    ctx.save();
+    const isP1 = role === 'noivo';
+    const mainColor = isP1 ? '#dc2626' : '#ec4899';
+    const darkArmor = isP1 ? '#7f1d1d' : '#831843';
+    const visorColor = '#38bdf8'; // Visor azul da foto
+
+    const sx = p.x;
+    const sy = p.y;
+    const isDucking = p.ducking;
+
+    // Sombra oval no chão
+    ctx.fillStyle = 'rgba(68, 50, 80, 0.75)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, isDucking ? 26 : 20, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (isDucking) {
+      // Pose Agachada
+      ctx.fillStyle = darkArmor;
+      ctx.fillRect(sx - 16, sy - 14, 30, 14);
+
+      ctx.fillStyle = mainColor;
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(sx - 12, sy - 28, 24, 18, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = mainColor;
+      ctx.beginPath();
+      ctx.arc(sx, sy - 34, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = visorColor;
+      ctx.fillRect(sx + 1, sy - 37, 8, 6);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(sx + 4, sy - 22, 28, 7);
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(sx + 14, sy - 24, 8, 3);
+    } else {
+      // Pose em Pé / Correndo (Exata do Soldado da Foto)
+      const legAnim = Math.sin(p.runCycle) * 8;
+
+      // Botas brancas/cinza com grevas vermelhas
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(sx - 9 + legAnim, sy - 18, 8, 18);
+      ctx.fillRect(sx + 1 - legAnim, sy - 18, 8, 18);
+      ctx.fillStyle = mainColor;
+      ctx.fillRect(sx - 10 + legAnim, sy - 12, 9, 8);
+      ctx.fillRect(sx + legAnim, sy - 12, 9, 8);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(sx - 10 + legAnim, sy - 4, 10, 5);
+      ctx.fillRect(sx + legAnim, sy - 4, 10, 5);
+
+      // Peitoral Vermelho com Ombreiras
+      ctx.fillStyle = mainColor;
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(sx - 12, sy - 40, 24, 24, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = darkArmor;
+      ctx.beginPath();
+      ctx.arc(sx - 11, sy - 36, 6, 0, Math.PI * 2);
+      ctx.arc(sx + 11, sy - 36, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Capacete com Crista Superior e Visor Azul
+      ctx.fillStyle = mainColor;
+      ctx.beginPath();
+      ctx.arc(sx, sy - 48, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Crista superior
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(sx - 2, sy - 60, 4, 4);
+
+      // Visor Azul Ciano Tecnológico
+      ctx.fillStyle = visorColor;
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = visorColor;
+      ctx.fillRect(sx + 2, sy - 52, 9, 7);
+      ctx.shadowBlur = 0;
+
+      // Rifle Laser Branco e Preto segurado com as duas mãos
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(sx + 2, sy - 36, 28, 8);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(sx + 6, sy - 39, 14, 4);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(sx + 26, sy - 38, 3, 2);
+    }
+
+    ctx.font = '700 11px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(isP1 ? 'NOIVO 1P' : 'NOIVA 2P', sx, isDucking ? sy - 48 : sy - 64);
+    ctx.restore();
+  },
+
+  drawArcadeMuzzleFlash(ctx, x, y) {
+    ctx.save();
+    // Labareda curva laranja/amarela (como na arma da foto)
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = '#f59e0b';
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(x + 2, y, 11, -Math.PI / 2, Math.PI / 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(x + 1, y, 6, -Math.PI / 2, Math.PI / 2);
+    ctx.fill();
+    ctx.restore();
+  },
+
+  drawBossDreadnought(ctx, b) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+
+    // Casco da Fortaleza Alienígena
+    ctx.fillStyle = '#4c0519';
+    ctx.strokeStyle = '#fda4af';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, 16);
+    ctx.fill();
+    ctx.stroke();
+
+    // Núcleo de Energia
+    ctx.fillStyle = '#ef4444';
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(0, 0, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Canhões Laser Duplos
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-b.w / 2 - 16, -32, 18, 10);
+    ctx.fillRect(-b.w / 2 - 16, 22, 18, 10);
+
+    // Barra de Vida do Boss
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-b.w / 2, -b.h / 2 - 20, b.w, 12);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(-b.w / 2, -b.h / 2 - 20, Math.max(0, (b.w * b.hp) / b.maxHp), 12);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-b.w / 2, -b.h / 2 - 20, b.w, 12);
+
+    ctx.restore();
+  },
+
+  drawExactArcadeHUD(ctx, st, width, height) {
+    ctx.save();
+    ctx.textBaseline = 'top';
+
+    // 1. PRIMEIRA LINHA: 1P    8700     DAMAGE GAGE (EM DUAS LINHAS)     HI    50000
+    // 1P em ciano vibrante
+    ctx.font = '700 17px "Press Start 2P", monospace, sans-serif';
+    ctx.fillStyle = '#38bdf8';
+    ctx.textAlign = 'left';
+    ctx.fillText('1P', 28, 70);
+
+    // Pontuação em ciano
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(`${st.score}`, 110, 70);
+
+    // HI 50000 no canto direito
+    ctx.fillStyle = '#4ade80';
+    ctx.textAlign = 'right';
+    ctx.fillText('HI', width - 150, 70);
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(`${st.hiScore}`, width - 28, 70);
+
+    // DAMAGE (Linha 1) e GAGE (Linha 2) centralizados em amarelo com borda laranja
+    ctx.textAlign = 'center';
+    ctx.font = '700 15px "Press Start 2P", monospace, sans-serif';
+    ctx.fillStyle = '#facc15';
+    ctx.fillText('DAMAGE', width / 2, 66);
+    ctx.fillText('GAGE', width / 2, 84);
+
+    // Barra DAMAGE GAGE: Vermelha sólida com fundo preto como na foto
+    const barW = 180;
+    const barH = 13;
+    const barX = width / 2 - barW / 2;
+    const barY = 104;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ef4444';
+    const gageRatio = Math.max(0, st.damageGage / st.maxDamageGage);
+    ctx.fillRect(barX, barY, barW * gageRatio, barH);
+
+    // 2. SEGUNDA LINHA: TIME    0:47
+    ctx.textAlign = 'left';
+    ctx.font = '700 16px "Press Start 2P", monospace, sans-serif';
+    ctx.fillStyle = '#4ade80';
+    ctx.fillText('TIME', 28, 96);
+    ctx.fillStyle = '#ffffff';
+    const sec = Math.ceil(st.timeRemaining);
+    const timeStr = `0:${sec < 10 ? '0' : ''}${sec}`;
+    ctx.fillText(timeStr, 110, 96);
+
+    // 3. CANTO INFERIOR ESQUERDO: VIDAS RESTANTES (2 Capacetes como na imagem)
+    const botY = height - 42;
+    for (let l = 0; l < st.lives; l++) {
+      const hx = 28 + l * 34;
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.arc(hx + 12, botY + 12, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(hx + 14, botY + 8, 6, 6);
+    }
+
+    ctx.restore();
+  },
+
+  drawCRTScanlines(ctx, width, height) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    for (let y = 0; y < height; y += 4) {
+      ctx.fillRect(0, y, width, 1.5);
+    }
+    ctx.restore();
   }
 };
+
 
 
 // ============================================================================
@@ -2661,36 +4163,136 @@ const Minigame6_Louca = {
 // ============================================================================
 // MINIGAME 7: FLAPPY BIRD DUPLO (VOO DA LUA DE MEL)
 // ============================================================================
+// MINIGAME 7: FLAPPY DUPLO (4 NÍVEIS PROGRESSIVOS DE VOO DOS NOIVOS)
+// ============================================================================
+const FLAPPY_LEVELS = [
+  {
+    level: 1,
+    name: 'Nível 1: Jardim do Altar',
+    goalPipes: 10,
+    speed: 210,
+    spawnInterval: 2.0,
+    gapRatio: 0.34,
+    minGap: 155,
+    moveAmp: 0,
+    bgTop: '#1e1b4b',
+    bgBot: '#312e81',
+    pipeColor: '#f43f5e'
+  },
+  {
+    level: 2,
+    name: 'Nível 2: Ventania dos Primos',
+    goalPipes: 12,
+    speed: 255,
+    spawnInterval: 1.75,
+    gapRatio: 0.31,
+    minGap: 142,
+    moveAmp: 34,
+    bgTop: '#4c1d95',
+    bgBot: '#be185d',
+    pipeColor: '#ec4899'
+  },
+  {
+    level: 3,
+    name: 'Nível 3: Tempestade de Boletos',
+    goalPipes: 15,
+    speed: 295,
+    spawnInterval: 1.55,
+    gapRatio: 0.29,
+    minGap: 132,
+    moveAmp: 52,
+    bgTop: '#0f172a',
+    bgBot: '#1e3a8a',
+    pipeColor: '#8b5cf6'
+  },
+  {
+    level: 4,
+    name: 'Nível 4: Lua de Mel Turbinada',
+    goalPipes: 18,
+    speed: 335,
+    spawnInterval: 1.38,
+    gapRatio: 0.27,
+    minGap: 124,
+    moveAmp: 68,
+    bgTop: '#3b0764',
+    bgBot: '#b45309',
+    pipeColor: '#f59e0b'
+  }
+];
+
 const Minigame7_Flappy = {
   id: 'mg7_flappy',
   order: 7,
   title: '7. FLAPPY DUPLO: VOO DOS NOIVOS',
-  subtitle: 'Passem juntos por 10 colunas floridas sem bater! [W] = Noivo | [⬆️/Espaço] = Noiva',
+  subtitle: '4 Níveis! Passem pelas colunas floridas sem bater! [W] = Noivo | [⬆️/Espaço] = Noiva',
   icon: '🕊️',
 
   onEnter(ctxApi) {
     const { height } = ctxApi.getViewport();
     ctxApi.mgState = {
+      selectingLevel: true,
+      levelIdx: 0,
+      levelCfg: FLAPPY_LEVELS[0],
       passedCount: 0,
-      goalPipes: 10,
+      spawnedCount: 0,
+      goalPipes: FLAPPY_LEVELS[0].goalPipes,
       p1: { y: height * 0.42, vy: 0 },
       p2: { y: height * 0.58, vy: 0 },
       pipes: [],
-      spawnTimer: 0.4
+      spawnTimer: 0.45,
+      levelTransitionTimer: 0,
+      finished: false,
+      levelBtns: []
     };
+  },
+
+  startLevel(idx, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    const { height } = ctxApi.getViewport();
+    const safeIdx = Math.max(0, Math.min(FLAPPY_LEVELS.length - 1, idx));
+    const cfg = FLAPPY_LEVELS[safeIdx];
+    st.selectingLevel = false;
+    st.levelIdx = safeIdx;
+    st.levelCfg = cfg;
+    st.passedCount = 0;
+    st.spawnedCount = 0;
+    st.goalPipes = cfg.goalPipes;
+    st.p1 = { y: height * 0.42, vy: 0 };
+    st.p2 = { y: height * 0.58, vy: 0 };
+    st.pipes = [];
+    st.spawnTimer = 0.45;
+    st.levelTransitionTimer = 0;
+    st.finished = false;
+    ctxApi.sfx.playClick();
   },
 
   flap(playerKey, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st) return;
+    if (!st || st.selectingLevel || st.finished || st.levelTransitionTimer > 0) return;
     st[playerKey].vy = -340;
     ctxApi.sfx.playJump(playerKey === 'p2');
   },
 
   onUpdate(dt, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st) return;
+    if (!st || st.selectingLevel || st.finished) return;
     const { width, height } = ctxApi.getViewport();
+
+    // Transição celebrativa entre níveis (sem gravidade para não derrubar o casal)
+    if (st.levelTransitionTimer > 0) {
+      st.levelTransitionTimer -= dt;
+      st.p1.y += (height * 0.42 - st.p1.y) * 5 * dt;
+      st.p2.y += (height * 0.58 - st.p2.y) * 5 * dt;
+      st.p1.vy = 0;
+      st.p2.vy = 0;
+      if (st.levelTransitionTimer <= 0) {
+        this.startLevel(st.levelIdx + 1, ctxApi);
+      }
+      return;
+    }
+
+    const cfg = st.levelCfg || FLAPPY_LEVELS[0];
     const gravity = 860;
     const birdX1 = width * 0.24;
     const birdX2 = width * 0.31;
@@ -2700,9 +4302,14 @@ const Minigame7_Flappy = {
       b.y += b.vy * dt;
       b.vy += gravity * dt;
 
-      if (b.y < 70 || b.y > height - 25) {
+      if (b.y < 68) {
+        b.y = 68;
+        b.vy = Math.max(0, b.vy);
+      }
+      if (b.y > height - 25 && !st.finished) {
+        st.finished = true;
         const who = k === 'p1' ? ctxApi.getNames().groom : ctxApi.getNames().bride;
-        ctxApi.batatinha(`${who} perdeu altitude no Flappy Duplo!`, {
+        ctxApi.batatinha(`${who} perdeu altitude no ${cfg.name}!`, {
           x: k === 'p1' ? birdX1 : birdX2,
           y: Math.max(80, Math.min(height - 30, b.y)),
           r: 40
@@ -2710,25 +4317,37 @@ const Minigame7_Flappy = {
       }
     });
 
+    if (st.finished) return;
+
     st.spawnTimer -= dt;
-    if (st.spawnTimer <= 0 && st.passedCount + st.pipes.length < st.goalPipes) {
-      st.spawnTimer = 2.0;
-      const gapH = Math.max(155, height * 0.34);
+    if (st.spawnTimer <= 0 && st.spawnedCount < st.goalPipes) {
+      st.spawnTimer = cfg.spawnInterval;
+      const gapH = Math.max(cfg.minGap, height * cfg.gapRatio);
       const minCenter = 140 + gapH / 2;
       const maxCenter = height - 80 - gapH / 2;
-      const gapY = minCenter + Math.random() * Math.max(40, maxCenter - minCenter);
+      const baseGapY = minCenter + Math.random() * Math.max(40, maxCenter - minCenter);
+      st.spawnedCount++;
       st.pipes.push({
         x: width + 60,
         w: 62,
-        gapY,
+        baseGapY,
+        gapY: baseGapY,
         gapH,
+        phase: Math.random() * Math.PI * 2,
+        moveAmp: cfg.moveAmp,
         passed: false
       });
     }
 
     for (let i = st.pipes.length - 1; i >= 0; i--) {
       const pp = st.pipes[i];
-      pp.x -= 210 * dt;
+      pp.x -= cfg.speed * dt;
+      if (pp.moveAmp > 0) {
+        pp.phase += dt * 2.2;
+        const minC = 125 + pp.gapH / 2;
+        const maxC = height - 65 - pp.gapH / 2;
+        pp.gapY = Math.max(minC, Math.min(maxC, pp.baseGapY + Math.sin(pp.phase) * pp.moveAmp));
+      }
 
       const topEdge = pp.gapY - pp.gapH / 2;
       const botEdge = pp.gapY + pp.gapH / 2;
@@ -2737,9 +4356,11 @@ const Minigame7_Flappy = {
         { b: st.p1, bx: birdX1, name: ctxApi.getNames().groom },
         { b: st.p2, bx: birdX2, name: ctxApi.getNames().bride }
       ].forEach(({ b, bx, name }) => {
-        if (bx + 16 > pp.x && bx - 16 < pp.x + pp.w) {
-          if (b.y - 16 < topEdge || b.y + 16 > botEdge) {
-            ctxApi.batatinha(`${name} bateu na coluna de flores do Flappy Duplo!`, {
+        if (st.finished) return;
+        if (bx + 15 > pp.x && bx - 15 < pp.x + pp.w) {
+          if (b.y - 15 < topEdge || b.y + 15 > botEdge) {
+            st.finished = true;
+            ctxApi.batatinha(`${name} bateu na coluna do ${cfg.name}!`, {
               x: bx,
               y: b.y,
               r: 44
@@ -2748,13 +4369,25 @@ const Minigame7_Flappy = {
         }
       });
 
+      if (st.finished) return;
+
       if (!pp.passed && pp.x + pp.w < birdX1) {
         pp.passed = true;
         st.passedCount++;
         ctxApi.sfx.playBounce();
+
         if (st.passedCount >= st.goalPipes) {
-          ctxApi.victory('Voo sincronizado perfeito! Vocês venceram o Flappy Bird Duplo!');
-          return;
+          if (st.levelIdx < FLAPPY_LEVELS.length - 1) {
+            st.pipes = [];
+            st.levelTransitionTimer = 1.9;
+            ctxApi.confetti(55);
+            if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+            return;
+          } else {
+            st.finished = true;
+            ctxApi.victory('Voo lendário! Vocês conquistaram todos os 4 níveis do Flappy Duplo!');
+            return;
+          }
         }
       }
 
@@ -2763,11 +4396,32 @@ const Minigame7_Flappy = {
   },
 
   onKeyDown(code, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    if (st.selectingLevel) {
+      if (code === 'Digit1') this.startLevel(0, ctxApi);
+      else if (code === 'Digit2') this.startLevel(1, ctxApi);
+      else if (code === 'Digit3') this.startLevel(2, ctxApi);
+      else if (code === 'Digit4') this.startLevel(3, ctxApi);
+      else if (code === 'Space' || code === 'Enter') this.startLevel(0, ctxApi);
+      return;
+    }
     if (code === 'KeyW') this.flap('p1', ctxApi);
     if (code === 'ArrowUp' || code === 'Space') this.flap('p2', ctxApi);
   },
 
   onPointerDown(x, y, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+    if (st.selectingLevel) {
+      for (const btn of st.levelBtns || []) {
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          this.startLevel(btn.idx, ctxApi);
+          return;
+        }
+      }
+      return;
+    }
     const { width } = ctxApi.getViewport();
     if (x < width / 2) this.flap('p1', ctxApi);
     else this.flap('p2', ctxApi);
@@ -2777,35 +4431,115 @@ const Minigame7_Flappy = {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
+    const cfg = st.levelCfg || FLAPPY_LEVELS[0];
+
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+    skyGrad.addColorStop(0, cfg.bgTop);
+    skyGrad.addColorStop(1, cfg.bgBot);
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    if (st.selectingLevel) {
+      ctx.save();
+      ctx.fillStyle = '#ffd166';
+      ctx.font = '700 22px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🕊️ FLAPPY DUPLO — ESCOLHA O NÍVEL', width / 2, Math.max(105, height * 0.20));
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '600 14px Fredoka, sans-serif';
+      ctx.fillText('Vença do Nível 1 ao 4 ou comece direto em um desafio mais difícil!', width / 2, Math.max(132, height * 0.25));
+
+      st.levelBtns = [];
+      const bw = Math.min(width - 40, 390);
+      const bh = Math.min(54, Math.max(42, (height - 200) / 5));
+      const startY = Math.max(155, height * 0.31);
+      FLAPPY_LEVELS.forEach((lv, i) => {
+        const bx = (width - bw) / 2;
+        const by = startY + i * (bh + 12);
+        st.levelBtns.push({ idx: i, x: bx, y: by, w: bw, h: bh });
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.strokeStyle = lv.pipeColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 12);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 15px Fredoka, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(lv.name, bx + 16, by + bh / 2);
+
+        ctx.fillStyle = '#ffd166';
+        ctx.font = '700 12px Fredoka, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${lv.goalPipes} col.`, bx + bw - 16, by + bh / 2);
+      });
+      ctx.restore();
+      return;
+    }
+
     const birdX1 = width * 0.24;
     const birdX2 = width * 0.31;
-
-    ctx.fillStyle = '#1e1b4b';
-    ctx.fillRect(0, 0, width, height);
 
     // Colunas de Casamento
     st.pipes.forEach((pp) => {
       const topH = pp.gapY - pp.gapH / 2;
       const botY = pp.gapY + pp.gapH / 2;
 
-      ctx.fillStyle = '#f43f5e';
+      ctx.fillStyle = cfg.pipeColor;
       ctx.strokeStyle = '#ffd166';
       ctx.lineWidth = 3;
-      ctx.fillRect(pp.x, 62, pp.w, topH - 62);
-      ctx.strokeRect(pp.x, 62, pp.w, topH - 62);
+      if (topH > 62) {
+        ctx.fillRect(pp.x, 62, pp.w, topH - 62);
+        ctx.strokeRect(pp.x, 62, pp.w, topH - 62);
+        ctx.fillRect(pp.x - 5, topH - 16, pp.w + 10, 16);
+        ctx.strokeRect(pp.x - 5, topH - 16, pp.w + 10, 16);
+      }
 
       ctx.fillRect(pp.x, botY, pp.w, height - botY);
       ctx.strokeRect(pp.x, botY, pp.w, height - botY);
+      ctx.fillRect(pp.x - 5, botY, pp.w + 10, 16);
+      ctx.strokeRect(pp.x - 5, botY, pp.w + 10, 16);
     });
 
     // Noivo e Noiva Voadores
     ctxApi.drawGroom(birdX1, st.p1.y + 20, ctxApi.getTime() * 14, 0.72, true);
     ctxApi.drawBride(birdX2, st.p2.y + 20, ctxApi.getTime() * 14, 0.72, true);
 
+    // HUD do Nível
     ctx.fillStyle = '#ffd166';
-    ctx.font = '700 17px Fredoka, sans-serif';
+    ctx.font = '700 16px Fredoka, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`🕊️ COLUNAS SUPERADAS: ${st.passedCount} / ${st.goalPipes}`, width / 2, 92);
+    ctx.fillText(`🕊️ ${cfg.name.toUpperCase()} • COLUNAS: ${st.passedCount} / ${st.goalPipes}`, width / 2, 90);
+
+    if (st.levelTransitionTimer > 0) {
+      const nextCfg = FLAPPY_LEVELS[st.levelIdx + 1];
+      ctx.save();
+      const bw = Math.min(width - 40, 440);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - bw / 2, height / 2 - 42, bw, 84, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#06d6a0';
+      ctx.font = '700 20px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`🎉 ${cfg.name.toUpperCase()} COMPLETO!`, width / 2, height / 2 - 12);
+
+      if (nextCfg) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 15px Fredoka, sans-serif';
+        ctx.fillText(`Preparando ${nextCfg.name}...`, width / 2, height / 2 + 18);
+      }
+      ctx.restore();
+    }
   }
 };
 
@@ -3979,8 +5713,8 @@ const Minigame8_TopGear = {
 
 
 // ============================================================================
-// games_part3.js - Minigames 9 a 11 da "Operação Lua de Mel"
-// 9. Colar na Prova | 10. Você é a IA | 11. Derrube a Torre
+// games_part3.js - Minigames 9 a 12 da "Operação Lua de Mel"
+// 9. Colar na Prova | 10. Você é a IA | 11. Derrube a Torre | 12. Futebol de Botão
 // ============================================================================
 
 // ============================================================================
@@ -4406,257 +6140,1577 @@ const Minigame10_VoceEhIA = {
 
 // ============================================================================
 // MINIGAME 11: DERRUBE A TORRE (DEMOLIÇÃO COOPERATIVA)
+// Mecânica Angry Birds Suave, Destruição Realista, Trajetória Balística e Vitória Justa!
 // ============================================================================
 const Minigame11_Torre = {
   id: 'mg11_torre',
   order: 11,
   title: '11. DERRUBE A TORRE: DEMOLIÇÃO COOP',
-  subtitle: 'Arremessem Malas e Buquês para derrubar a Torre de Burocracia abaixo da linha!',
+  subtitle: 'Arremessem Malas e Buquês para demolir a Torre de Burocracia abaixo da Linha Limite!',
   icon: '🏗️',
 
   onEnter(ctxApi) {
     const { width, height } = ctxApi.getViewport();
-    const groundY = height - 56;
-    const towerX = width * 0.72;
+    const groundY = height - 58;
+    const towerBaseX = Math.floor(width * 0.68);
+    const limitLineY = groundY - 80; // Linha de demolição justa: escombros no chão ficam abaixo dela!
 
-    const blocks = [
-      // Base de Concreto
-      { x: towerX - 42, y: groundY - 46, w: 38, h: 46, vx: 0, vy: 0, mat: 'concreto', label: 'BOLETO', color: '#64748b', hp: 3 },
-      { x: towerX + 4, y: groundY - 46, w: 38, h: 46, vx: 0, vy: 0, mat: 'concreto', label: 'IPTU', color: '#64748b', hp: 3 },
-      // Meio de Madeira
-      { x: towerX - 46, y: groundY - 94, w: 92, h: 44, vx: 0, vy: 0, mat: 'madeira', label: 'DIÁRIOS DE CLASSE', color: '#b45309', hp: 2 },
-      { x: towerX - 36, y: groundY - 140, w: 72, h: 44, vx: 0, vy: 0, mat: 'madeira', label: 'PROVAS', color: '#b45309', hp: 2 },
-      // Topo de Vidro
-      { x: towerX - 28, y: groundY - 186, w: 56, h: 44, vx: 0, vy: 0, mat: 'vidro', label: 'ESTRESSE', color: '#38bdf8', hp: 1 }
-    ];
+    const slingX = Math.floor(width * 0.20);
+    const slingY = groundY - 72;
+
+    const blocks = this.createTower(towerBaseX, groundY);
 
     ctxApi.mgState = {
       groundY,
-      shotsLeft: 6,
-      turn: 'p1',
-      aimAngle: -0.62,
-      power: 72,
-      powerDir: 1,
-      charging: false,
+      limitLineY,
+      towerBaseX,
+      slingX,
+      slingY,
+      shotsLeft: 5,
+      turn: 'p1', // 'p1' (Noivo: 🧳 Mala Pesada) | 'p2' (Noiva: 💐 Buquê Explosivo)
+      aimAngle: -0.42, // Ângulo perfeito em direção à torre
+      power: 75,
+      isDragging: false,
+      pullX: slingX,
+      pullY: slingY,
       projectile: null,
-      blocks
+      blocks,
+      explosions: [],
+      particles: [],
+      settleTimer: 0,
+      bannerText: 'VEZ DO NOIVO: ARREMESSO DE MALA PESADA 🧳',
+      bannerColor: '#38bdf8',
+      bannerTimer: 2.8,
+      btnFire: { x: 0, y: 0, w: 0, h: 0 }
     };
+  },
+
+  createTower(bx, groundY) {
+    const blocks = [];
+
+    // --- ANDAR 1: FUNDAÇÃO (Concreto Pesado) ---
+    // 3 Pilares verticais
+    blocks.push({
+      x: bx - 52, y: groundY - 30, w: 26, h: 60, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'concreto', label: 'IPTU', color: '#64748b', hp: 3, maxHp: 3, mass: 3.5
+    });
+    blocks.push({
+      x: bx, y: groundY - 30, w: 26, h: 60, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'concreto', label: 'BOLETO', color: '#64748b', hp: 3, maxHp: 3, mass: 3.5
+    });
+    blocks.push({
+      x: bx + 52, y: groundY - 30, w: 26, h: 60, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'concreto', label: 'FINANC.', color: '#64748b', hp: 3, maxHp: 3, mass: 3.5
+    });
+    // Viga horizontal de suporte
+    blocks.push({
+      x: bx, y: groundY - 68, w: 156, h: 16, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'concreto', label: 'BUROCRACIA BASE', color: '#475569', hp: 3, maxHp: 3, mass: 4.0
+    });
+
+    // --- ANDAR 2: MEIO (Madeira e Barril de TNT) ---
+    blocks.push({
+      x: bx - 42, y: groundY - 100, w: 22, h: 48, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'madeira', label: 'DIÁRIO', color: '#b45309', hp: 2, maxHp: 2, mass: 1.8
+    });
+    // 💣 BARRIL DE TNT NO CENTRO DA TORRE
+    blocks.push({
+      x: bx, y: groundY - 98, w: 32, h: 36, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'tnt', label: '💣 TNT', color: '#ef4444', hp: 1, maxHp: 1, mass: 1.2
+    });
+    blocks.push({
+      x: bx + 42, y: groundY - 100, w: 22, h: 48, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'madeira', label: 'PROVAS', color: '#b45309', hp: 2, maxHp: 2, mass: 1.8
+    });
+    // Viga horizontal de madeira
+    blocks.push({
+      x: bx, y: groundY - 130, w: 124, h: 14, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'madeira', label: 'PILHA DE TRABALHO', color: '#92400e', hp: 2, maxHp: 2, mass: 2.2
+    });
+
+    // --- ANDAR 3: TOPO (Vidro Frágil e Bloco TCC) ---
+    blocks.push({
+      x: bx - 30, y: groundY - 158, w: 24, h: 42, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'vidro', label: 'STRESS', color: '#38bdf8', hp: 1, maxHp: 1, mass: 1.0
+    });
+    blocks.push({
+      x: bx + 30, y: groundY - 158, w: 24, h: 42, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'vidro', label: 'COBRANÇA', color: '#38bdf8', hp: 1, maxHp: 1, mass: 1.0
+    });
+    // Viga de vidro
+    blocks.push({
+      x: bx, y: groundY - 184, w: 90, h: 12, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'vidro', label: 'DISCUSSÕES', color: '#7dd3fc', hp: 1, maxHp: 1, mass: 0.8
+    });
+    // Bloco Superior
+    blocks.push({
+      x: bx, y: groundY - 208, w: 38, h: 36, vx: 0, vy: 0, angle: 0, vAng: 0,
+      mat: 'vidro', label: '👑 TCC', color: '#0ea5e9', hp: 1, maxHp: 1, mass: 0.8
+    });
+
+    return blocks;
   },
 
   fireSlingshot(ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || st.projectile || st.shotsLeft <= 0) return;
-    const { width } = ctxApi.getViewport();
-    const startX = width * 0.16;
-    const startY = st.groundY - 48;
-    const spd = 380 + (st.power / 100) * 480;
+    if (!st || st.projectile || st.shotsLeft <= 0 || st.settleTimer > 0) return;
+
+    const startX = st.slingX;
+    const startY = st.slingY;
+    // Velocidade calibrada para alcançar a torre suavemente com excelente força de impacto
+    const spd = 620 + (st.power / 100) * 440;
 
     st.shotsLeft--;
-    st.charging = false;
+    st.isDragging = false;
+    st.pullX = st.slingX;
+    st.pullY = st.slingY;
+    st.settleTimer = 0;
+
+    const isP1 = st.turn === 'p1';
     st.projectile = {
       x: startX,
       y: startY,
       vx: Math.cos(st.aimAngle) * spd,
       vy: Math.sin(st.aimAngle) * spd,
-      emoji: st.turn === 'p1' ? '🧳' : '💐',
-       settleTimer: 0
+      kind: isP1 ? 'luggage' : 'bouquet',
+      emoji: isP1 ? '🧳' : '💐',
+      mass: isP1 ? 6.0 : 2.0,
+      damage: isP1 ? 5.0 : 3.0,
+      r: isP1 ? 18 : 16,
+      piercesRemaining: isP1 ? 2 : 0,
+      alive: true
     };
-    ctxApi.sfx.playShoot();
+
+    if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+    else if (ctxApi.sfx?.playJump) ctxApi.sfx.playJump();
+  },
+
+  triggerExplosion(x, y, radius, damage, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+
+    st.explosions.push({ x, y, radius: 15, maxRadius: radius, alpha: 1.0 });
+    ctxApi.particles(x, y, '#f59e0b', 26, 260);
+    ctxApi.particles(x, y, '#ec4899', 20, 220);
+
+    if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+    else if (ctxApi.sfx?.playShoot) ctxApi.sfx.playShoot();
+
+    // Dano e dispersão radial em todos os blocos no raio
+    st.blocks.forEach((bl) => {
+      const d = Math.hypot(bl.x - x, bl.y - y);
+      if (d <= radius + Math.max(bl.w, bl.h) / 2) {
+        bl.hp -= damage;
+        const pushAng = Math.atan2(bl.y - y, bl.x - x);
+        const force = (1 - d / (radius + 50)) * 520;
+        bl.vx += Math.cos(pushAng) * force;
+        bl.vy += Math.sin(pushAng) * force - 110;
+        bl.vAng += (Math.cos(pushAng) > 0 ? 4.5 : -4.5);
+
+        // Reação em cadeia de TNT
+        if (bl.mat === 'tnt' && bl.hp <= 0 && !bl.exploded) {
+          bl.exploded = true;
+          setTimeout(() => {
+            if (ctxApi.mgState && Array.isArray(ctxApi.mgState.blocks)) {
+              this.triggerExplosion(bl.x, bl.y, 140, 7.0, ctxApi);
+            }
+          }, 90);
+        }
+      }
+    });
   },
 
   onUpdate(dt, ctxApi) {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
-    st.groundY = height - 56;
+    st.groundY = height - 58;
+    st.limitLineY = st.groundY - 80;
+    st.slingX = Math.floor(width * 0.20);
+    st.slingY = st.groundY - 72;
+
+    if (st.bannerTimer > 0) st.bannerTimer -= dt;
 
     const keys = ctxApi.getKeys();
-    const gravity = 980;
+    const gravity = 640; // Gravidade suave e cinematográfica
 
-    if (!st.projectile) {
-      if (keys.p1Left || keys.p2Left) st.aimAngle = Math.max(-1.25, st.aimAngle - 1.2 * dt);
-      if (keys.p1Right || keys.p2Right) st.aimAngle = Math.min(-0.15, st.aimAngle + 1.2 * dt);
+    // 1. Ajuste de Mira por Teclado
+    if (!st.projectile && !st.isDragging && st.settleTimer <= 0) {
+      if (keys.p1Left || keys.p2Left) st.aimAngle = Math.max(-1.15, st.aimAngle - 0.95 * dt);
+      if (keys.p1Right || keys.p2Right) st.aimAngle = Math.min(-0.10, st.aimAngle + 0.95 * dt);
+      if (keys.p1Up || keys.p2Up) st.power = Math.min(100, st.power + 50 * dt);
+      if (keys.p1Down || keys.p2Down) st.power = Math.max(30, st.power - 50 * dt);
+    }
 
-      if (st.charging) {
-        st.power += st.powerDir * 95 * dt;
-        if (st.power >= 100) { st.power = 100; st.powerDir = -1; }
-        if (st.power <= 25) { st.power = 25; st.powerDir = 1; }
-      }
-    } else {
+    // 2. Física do Projétil Ativo (Mala ou Buquê)
+    if (st.projectile && st.projectile.alive) {
       const pr = st.projectile;
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
       pr.vy += gravity * dt;
 
-      // Colisão com blocos da torre
+      // Colisão Projétil vs Blocos
       for (let i = st.blocks.length - 1; i >= 0; i--) {
         const bl = st.blocks[i];
-        if (
-          pr.x + 16 > bl.x &&
-          pr.x - 16 < bl.x + bl.w &&
-          pr.y + 16 > bl.y &&
-          pr.y - 16 < bl.y + bl.h
-        ) {
-          bl.hp -= 2;
-          bl.vx += pr.vx * 0.48;
-          bl.vy -= 140;
-          pr.vx *= -0.35;
-          pr.vy *= 0.5;
-          ctxApi.sfx.playBounce();
-          ctxApi.particles(pr.x, pr.y, bl.color, 15, 180);
+        const halfW = bl.w / 2;
+        const halfH = bl.h / 2;
 
-          if (bl.hp <= 0) {
-            st.blocks.splice(i, 1);
+        if (
+          pr.x + pr.r > bl.x - halfW &&
+          pr.x - pr.r < bl.x + halfW &&
+          pr.y + pr.r > bl.y - halfH &&
+          pr.y - pr.r < bl.y + halfH
+        ) {
+          bl.hp -= pr.damage;
+
+          // Buquê da Noiva: Detona em explosão colossal imediata!
+          if (pr.kind === 'bouquet') {
+            this.triggerExplosion(pr.x, pr.y, 115, 5.0, ctxApi);
+            pr.alive = false;
           } else {
-            // Empurra blocos acima também
-            st.blocks.forEach((other) => {
-              if (other !== bl && other.y < bl.y) {
-                other.vx += 95;
-                other.vy -= 80;
-              }
-            });
+            // Mala do Noivo: Projétil Pesado que esmaga e empurra com força bruta!
+            bl.vx += pr.vx * 0.85;
+            bl.vy += pr.vy * 0.55 - 60;
+            bl.vAng += (pr.vx > 0 ? 5.5 : -5.5);
+            ctxApi.particles(pr.x, pr.y, bl.color, 16, 210);
+            if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+
+            if (pr.piercesRemaining > 0) {
+              pr.piercesRemaining--;
+              pr.vx *= 0.72; // Continua atravessando
+            } else {
+              pr.vx *= -0.25;
+              pr.alive = false;
+            }
+          }
+
+          if (bl.mat === 'tnt' && bl.hp <= 0 && !bl.exploded) {
+            bl.exploded = true;
+            this.triggerExplosion(bl.x, bl.y, 140, 7.0, ctxApi);
           }
           break;
         }
       }
 
-      if (pr.y > st.groundY || pr.x > width + 40) {
-        st.projectile = null;
-        st.turn = st.turn === 'p1' ? 'p2' : 'p1';
-
-        if (st.blocks.length === 0) {
-          ctxApi.victory('Torre de Burocracia e Estresse 100% demolida pelo casal!');
-          return;
+      // Colisão com o solo ou fora da tela
+      if (pr.y + pr.r >= st.groundY || pr.x > width + 60 || pr.x < -60) {
+        if (pr.kind === 'bouquet' && pr.y + pr.r >= st.groundY) {
+          this.triggerExplosion(pr.x, st.groundY - 12, 95, 4.0, ctxApi);
         }
-        if (st.shotsLeft <= 0 && st.blocks.length > 0) {
-          ctxApi.batatinha('Acabaram os arremessos e a Torre de Burocracia continuou de pé!', {
-            x: width * 0.72,
-            y: st.groundY - 70,
-            r: 55
-          });
-          return;
+        pr.alive = false;
+      }
+
+      if (!pr.alive) {
+        st.projectile = null;
+        st.settleTimer = 1.3; // 1.3s para os blocos caírem e estabilizarem
+      }
+    }
+
+    // 3. Física de Queda, Rotação e Destruição dos Blocos
+    for (let i = st.blocks.length - 1; i >= 0; i--) {
+      const bl = st.blocks[i];
+
+      if (bl.hp <= 0) {
+        ctxApi.particles(bl.x, bl.y, bl.color, 18, 180);
+        st.blocks.splice(i, 1);
+        continue;
+      }
+
+      // Gravidade
+      bl.vy += gravity * 0.95 * dt;
+      bl.x += bl.vx * dt;
+      bl.y += bl.vy * dt;
+      bl.angle += bl.vAng * dt;
+
+      // Colisão com o chão
+      const halfH = bl.h / 2;
+      if (bl.y + halfH >= st.groundY) {
+        bl.y = st.groundY - halfH;
+        bl.vy = -bl.vy * 0.15;
+        bl.vx *= 0.82;
+        bl.vAng *= 0.78;
+        if (Math.abs(bl.vy) < 12) bl.vy = 0;
+        if (Math.abs(bl.vx) < 4) bl.vx = 0;
+        if (Math.abs(bl.vAng) < 0.08) bl.vAng = 0;
+      }
+
+      // Se saiu para fora da tela
+      if (bl.x < -90 || bl.x > width + 90) {
+        st.blocks.splice(i, 1);
+        continue;
+      }
+    }
+
+    // 4. Colisão Bloco vs Bloco (Apoio e Tombamento)
+    for (let i = 0; i < st.blocks.length; i++) {
+      const a = st.blocks[i];
+      for (let j = i + 1; j < st.blocks.length; j++) {
+        const b = st.blocks[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const minDistX = (a.w + b.w) / 2;
+        const minDistY = (a.h + b.h) / 2;
+
+        if (Math.abs(dx) < minDistX && Math.abs(dy) < minDistY) {
+          const overlapX = minDistX - Math.abs(dx);
+          const overlapY = minDistY - Math.abs(dy);
+
+          if (overlapY < overlapX) {
+            if (dy > 0) {
+              b.y += overlapY * 0.5;
+              a.y -= overlapY * 0.5;
+              b.vy = Math.max(0, b.vy);
+              a.vy = Math.min(0, a.vy);
+            } else {
+              b.y -= overlapY * 0.5;
+              a.y += overlapY * 0.5;
+              a.vy = Math.max(0, a.vy);
+              b.vy = Math.min(0, b.vy);
+            }
+          } else {
+            const sign = dx > 0 ? 1 : -1;
+            b.x += overlapX * 0.5 * sign;
+            a.x -= overlapX * 0.5 * sign;
+            const avgVx = (a.vx + b.vx) / 2;
+            a.vx = avgVx * 0.8;
+            b.vx = avgVx * 0.8;
+            a.vAng += (sign > 0 ? -1.8 : 1.8) * dt;
+            b.vAng += (sign > 0 ? 1.8 : -1.8) * dt;
+          }
         }
       }
     }
 
-    // Física simples de gravidade nos blocos restantes
-    for (let i = st.blocks.length - 1; i >= 0; i--) {
-      const bl = st.blocks[i];
-      bl.x += bl.vx * dt;
-      bl.y += bl.vy * dt;
-      bl.vx *= 0.92;
-      bl.vy += gravity * 0.6 * dt;
+    // 5. Atualiza Explosões Visuais
+    for (let ex = st.explosions.length - 1; ex >= 0; ex--) {
+      const exp = st.explosions[ex];
+      exp.radius += 170 * dt;
+      exp.alpha -= 2.2 * dt;
+      if (exp.alpha <= 0) st.explosions.splice(ex, 1);
+    }
 
-      if (bl.y + bl.h > st.groundY) {
-        bl.y = st.groundY - bl.h;
-        bl.vy = 0;
-      }
+    // 6. Verificação de Vitória / Fim de Turno / Batatinha
+    if (st.settleTimer > 0) {
+      st.settleTimer -= dt;
+      if (st.settleTimer <= 0) {
+        // Checa se algum bloco ainda tem o topo acima da Linha Limite
+        const blocksAbove = st.blocks.filter((b) => (b.y - b.h / 2) < st.limitLineY);
 
-      // Se caiu para fora da base da torre, destrói!
-      if (Math.abs(bl.x - width * 0.72) > 135) {
-        ctxApi.particles(bl.x, bl.y, bl.color, 12, 140);
-        st.blocks.splice(i, 1);
-        if (st.blocks.length === 0) {
-          ctxApi.victory('Torre de Burocracia totalmente demolida!');
+        if (blocksAbove.length === 0) {
+          // VITÓRIA TOTAL!
+          ctxApi.confetti(60);
+          ctxApi.victory('Demolição Perfeita! A Torre de Burocracia foi 100% derrubada pelo casal!');
           return;
         }
+
+        if (st.shotsLeft <= 0) {
+          // DERROTA: Acabaram os arremessos!
+          ctxApi.batatinha('Acabaram os arremessos e a Torre de Burocracia continuou de pé acima da Linha Limite!', {
+            x: st.towerBaseX,
+            y: st.limitLineY,
+            r: 70
+          });
+          return;
+        }
+
+        // Alterna turno
+        st.turn = st.turn === 'p1' ? 'p2' : 'p1';
+        const isP1Next = st.turn === 'p1';
+        const names = ctxApi.getNames ? ctxApi.getNames() : { groom: 'Noivo', bride: 'Noiva' };
+        st.bannerText = isP1Next
+          ? `VEZ DO ${names.groom.toUpperCase()}: MALA PESADA 🧳`
+          : `VEZ DA ${names.bride.toUpperCase()}: BUQUÊ EXPLOSIVO 💐`;
+        st.bannerColor = isP1Next ? '#38bdf8' : '#ec4899';
+        st.bannerTimer = 2.4;
+        if (ctxApi.sfx?.playClick) ctxApi.sfx.playClick();
       }
     }
   },
 
   onKeyDown(code, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || st.projectile) return;
-    if (['KeyW', 'Space', 'ArrowUp'].includes(code)) {
-      st.charging = true;
-    }
-  },
+    if (!st || st.projectile || st.settleTimer > 0) return;
 
-  onKeyUp(code, ctxApi) {
-    const st = ctxApi.mgState;
-    if (!st || st.projectile) return;
-    if (['KeyW', 'Space', 'ArrowUp'].includes(code) && st.charging) {
+    if (code === 'Space' || code === 'Enter') {
       this.fireSlingshot(ctxApi);
     }
   },
 
   onPointerDown(x, y, ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || st.projectile) return;
-    st.charging = true;
+    if (!st || st.projectile || st.settleTimer > 0) return;
+
+    // Se clicar no botão de disparo rápido na tela
+    if (
+      st.btnFire &&
+      x >= st.btnFire.x &&
+      x <= st.btnFire.x + st.btnFire.w &&
+      y >= st.btnFire.y &&
+      y <= st.btnFire.y + st.btnFire.h
+    ) {
+      this.fireSlingshot(ctxApi);
+      return;
+    }
+
+    // Clique na metade esquerda da tela ou próximo ao estilingue
+    const { width } = ctxApi.getViewport();
+    if (x < width * 0.45) {
+      st.isDragging = true;
+      this.handleDrag(x, y, st);
+    }
+  },
+
+  onPointerMove(x, y, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st || !st.isDragging || st.projectile) return;
+    this.handleDrag(x, y, st);
+  },
+
+  handleDrag(x, y, st) {
+    const dx = x - st.slingX;
+    const dy = y - st.slingY;
+    const dist = Math.hypot(dx, dy);
+
+    // Se o jogador puxar para a direita (em direção à torre), invertemos para puxar o elástico para trás!
+    let pullDx = dx;
+    let pullDy = dy;
+    if (dx > 10) {
+      pullDx = -dx;
+      pullDy = -dy;
+    }
+
+    const pullDist = Math.hypot(pullDx, pullDy);
+    const maxPull = 110;
+    const clampedDist = Math.min(maxPull, Math.max(25, pullDist));
+    const pullAngle = Math.atan2(pullDy, pullDx);
+
+    st.pullX = st.slingX + Math.cos(pullAngle) * clampedDist;
+    st.pullY = st.slingY + Math.sin(pullAngle) * clampedDist;
+
+    // O projétil voa na direção contrária do puxão
+    st.aimAngle = Math.atan2(-pullDy, -pullDx);
+    // Limita o ângulo para disparos válidos e elegantes em direção à torre
+    st.aimAngle = Math.max(-1.15, Math.min(-0.10, st.aimAngle));
+    st.power = Math.max(35, Math.min(100, (clampedDist / maxPull) * 100));
   },
 
   onPointerUp(ctxApi) {
     const st = ctxApi.mgState;
-    if (!st || st.projectile) return;
-    if (st.charging) this.fireSlingshot(ctxApi);
+    if (!st || !st.isDragging || st.projectile) return;
+
+    st.isDragging = false;
+    if (st.power >= 35) {
+      this.fireSlingshot(ctxApi);
+    } else {
+      st.pullX = st.slingX;
+      st.pullY = st.slingY;
+    }
   },
 
   onRender(ctx, ctxApi) {
     const st = ctxApi.mgState;
     if (!st) return;
     const { width, height } = ctxApi.getViewport();
-    const slingX = width * 0.16;
-    const slingY = st.groundY - 48;
+    const names = ctxApi.getNames ? ctxApi.getNames() : { groom: 'Noivo', bride: 'Noiva' };
 
-    ctx.fillStyle = '#171029';
+    // 1. Fundo do Céu Noturno
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, st.groundY);
+    bgGrad.addColorStop(0, '#0c071a');
+    bgGrad.addColorStop(1, '#23133d');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
+    // 2. Piso de Festa e Gramado
     ctx.fillStyle = '#334155';
     ctx.fillRect(0, st.groundY, width, height - st.groundY);
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, st.groundY + 12, width, height - st.groundY - 12);
 
-    ctx.fillStyle = '#ffd166';
-    ctx.font = '700 15px Fredoka, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      `🏗️ ARREMESSOS RESTANTES: ${st.shotsLeft}  |  BLOCOS NA TORRE: ${st.blocks.length}  |  Mire (A/D) e Segure [W / Espaço / Toque]`,
-      width / 2,
-      88
-    );
+    // 3. LINHA LIMITE DE DEMOLIÇÃO
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 8]);
+    ctx.beginPath();
+    ctx.moveTo(st.towerBaseX - 160, st.limitLineY);
+    ctx.lineTo(st.towerBaseX + 160, st.limitLineY);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    // Estilingue e Noivos
-    ctxApi.drawGroom(slingX - 28, st.groundY, 0, 0.82, true);
-    ctxApi.drawBride(slingX + 18, st.groundY, 0, 0.82, true);
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = '700 12px Fredoka, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('⚠️ LINHA LIMITE (DERRUBEM OS BLOCOS ABAIXO DAQUI!)', st.towerBaseX - 150, st.limitLineY - 8);
+    ctx.restore();
 
-    // Trajetória pontilhada
+    // 4. Trajetória Parabólica Balística Completa (Angry Birds Style)
     if (!st.projectile) {
-      ctx.strokeStyle = '#ffd166';
-      ctx.lineWidth = 2.5;
+      ctx.save();
+      const arcColor = st.turn === 'p1' ? 'rgba(56, 189, 248, 0.75)' : 'rgba(236, 72, 153, 0.75)';
+      ctx.strokeStyle = arcColor;
+      ctx.lineWidth = 3;
       ctx.setLineDash([6, 6]);
       ctx.beginPath();
-      ctx.moveTo(slingX, slingY);
-      ctx.lineTo(
-        slingX + Math.cos(st.aimAngle) * (80 + st.power),
-        slingY + Math.sin(st.aimAngle) * (80 + st.power)
-      );
+
+      let simX = st.slingX;
+      let simY = st.slingY;
+      const spd = 620 + (st.power / 100) * 440;
+      let simVx = Math.cos(st.aimAngle) * spd;
+      let simVy = Math.sin(st.aimAngle) * spd;
+      ctx.moveTo(simX, simY);
+
+      let impactPoint = null;
+      for (let s = 0; s < 45; s++) {
+        const dtSim = 0.035;
+        simX += simVx * dtSim;
+        simY += simVy * dtSim;
+        simVy += 640 * dtSim;
+        ctx.lineTo(simX, simY);
+
+        // Se cruzar com a torre ou com o solo
+        if (simY >= st.groundY || (simX >= st.towerBaseX - 80 && simX <= st.towerBaseX + 80 && simY >= st.groundY - 240)) {
+          impactPoint = { x: simX, y: simY };
+          break;
+        }
+      }
       ctx.stroke();
-      ctx.setLineDash([]);
-    } else {
-      ctx.font = '32px sans-serif';
-      ctx.fillText(st.projectile.emoji, st.projectile.x, st.projectile.y);
+
+      // Mira / Retículo no Ponto de Impacto
+      if (impactPoint) {
+        ctx.fillStyle = arcColor;
+        ctx.beginPath();
+        ctx.arc(impactPoint.x, impactPoint.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
-    // Blocos da Torre (Vidro, Madeira e Concreto)
-    st.blocks.forEach((bl) => {
-      ctx.fillStyle = bl.color;
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2.5;
+    // 5. ESTILINGUE E BORRACHAS ELÁSTICAS
+    const slingBaseX = st.slingX;
+    const slingBaseY = st.groundY;
+    const forkLeftX = slingBaseX - 14;
+    const forkRightX = slingBaseX + 14;
+    const forkTopY = st.slingY - 10;
+
+    ctx.save();
+    ctx.fillStyle = '#854d0e';
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(slingBaseX - 8, slingBaseY);
+    ctx.lineTo(slingBaseX - 8, st.slingY + 12);
+    ctx.lineTo(forkLeftX, forkTopY);
+    ctx.lineTo(forkLeftX + 6, forkTopY);
+    ctx.lineTo(slingBaseX, st.slingY + 16);
+    ctx.lineTo(forkRightX - 6, forkTopY);
+    ctx.lineTo(forkRightX, forkTopY);
+    ctx.lineTo(slingBaseX + 8, st.slingY + 12);
+    ctx.lineTo(slingBaseX + 8, slingBaseY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    const px = st.isDragging ? st.pullX : st.slingX;
+    const py = st.isDragging ? st.pullY : st.slingY;
+
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(forkLeftX, forkTopY);
+    ctx.lineTo(px, py);
+    ctx.moveTo(forkRightX, forkTopY);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+
+    if (!st.projectile) {
+      ctx.font = '28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(st.turn === 'p1' ? '🧳' : '💐', px, py);
+    }
+    ctx.restore();
+
+    // 6. Projétil em Voo
+    if (st.projectile) {
+      ctx.save();
+      ctx.font = '34px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(st.projectile.emoji, st.projectile.x, st.projectile.y);
+      ctx.restore();
+    }
+
+    // 7. Explosões Visuais
+    st.explosions.forEach((exp) => {
+      ctx.save();
       ctx.beginPath();
-      ctx.roundRect(bl.x, bl.y, bl.w, bl.h, 6);
+      ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(245, 158, 11, ${Math.max(0, exp.alpha * 0.45)})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(236, 72, 153, ${Math.max(0, exp.alpha)})`;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 8. BLOCOS DA TORRE (Vidro, Madeira, Concreto e TNT)
+    st.blocks.forEach((bl) => {
+      ctx.save();
+      ctx.translate(bl.x, bl.y);
+      ctx.rotate(bl.angle);
+
+      if (bl.mat === 'vidro') {
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.72)';
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 2;
+      } else if (bl.mat === 'madeira') {
+        ctx.fillStyle = '#b45309';
+        ctx.strokeStyle = '#fef3c7';
+        ctx.lineWidth = 2;
+      } else if (bl.mat === 'tnt') {
+        ctx.fillStyle = '#dc2626';
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 2.5;
+      } else {
+        ctx.fillStyle = '#64748b';
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 2;
+      }
+
+      ctx.beginPath();
+      ctx.roundRect(-bl.w / 2, -bl.h / 2, bl.w, bl.h, 4);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = '700 11px Fredoka, sans-serif';
-      ctx.fillText(bl.label, bl.x + bl.w / 2, bl.y + bl.h / 2 + 4);
+      ctx.font = '700 10px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(bl.label, 0, 0);
+
+      if (bl.hp < bl.maxHp) {
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(-bl.w / 2 + 2, -bl.h / 2 + 2, (bl.w - 4) * (bl.hp / bl.maxHp), 3);
+      }
+      ctx.restore();
     });
+
+    // 9. Personagens Noivo e Noiva
+    ctxApi.drawGroom(st.slingX - 44, st.groundY, 0, 0.85, true);
+    ctxApi.drawBride(st.slingX + 38, st.groundY, 0, 0.85, true);
+
+    // 10. HUD Superior
+    const hudW = Math.min(560, width * 0.92);
+    const hudX = width / 2 - hudW / 2;
+    const hudY = 74;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 10, 30, 0.88)';
+    ctx.strokeStyle = st.turn === 'p1' ? '#38bdf8' : '#ec4899';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(hudX, hudY, hudW, 40, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 14px Fredoka, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`💣 ARREMESSOS: ${st.shotsLeft}/5`, hudX + 16, hudY + 25);
+
+    const blocksAbove = st.blocks.filter((b) => (b.y - b.h / 2) < st.limitLineY);
+    ctx.fillStyle = blocksAbove.length === 0 ? '#10b981' : '#f59e0b';
+    ctx.textAlign = 'center';
+    ctx.fillText(`BLOCOS ACIMA DO LIMITE: ${blocksAbove.length}`, hudX + hudW / 2, hudY + 25);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'right';
+    ctx.fillText(`POTÊNCIA: ${Math.round(st.power)}%`, hudX + hudW - 16, hudY + 25);
+    ctx.restore();
+
+    // 11. Botão de Arremesso Rápido
+    const btnW = 120;
+    const btnH = 40;
+    const btnX = st.slingX - btnW / 2;
+    const btnY = height - 52;
+    st.btnFire = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+    ctx.save();
+    ctx.fillStyle = st.turn === 'p1' ? '#0284c7' : '#db2777';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 14px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🚀 DISPARAR', btnX + btnW / 2, btnY + btnH / 2);
+    ctx.restore();
+
+    // 12. Banner de Turno
+    if (st.bannerTimer > 0 && st.bannerText) {
+      ctx.save();
+      const by = height * 0.35;
+      ctx.fillStyle = 'rgba(15, 10, 30, 0.92)';
+      ctx.strokeStyle = st.bannerColor || '#ffd166';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - 250, by - 24, 500, 48, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 16px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(st.bannerText, width / 2, by);
+      ctx.restore();
+    }
+  }
+};
+
+
+
+// ============================================================================
+// MINIGAME 12: FUTEBOL DE BOTÃO DO CASAL (5x5 • SOCCER STARS STYLE)
+// ============================================================================
+const Minigame12_FutebolBotao = {
+  id: 'mg12_futebol_botao',
+  order: 12,
+  title: '12. FUTEBOL DE BOTÃO DO CASAL',
+  subtitle: 'Duelo 5x5 estilo Soccer Stars! Arraste para mirar e faça 3 gols primeiro!',
+  icon: '⚽',
+
+  getFieldMetrics(width, height) {
+    const hudTop = 64;
+    const scoreH = Math.max(54, Math.min(68, height * 0.12));
+    const padX = Math.max(36, Math.min(66, width * 0.065));
+    const padY = Math.max(18, Math.min(28, height * 0.04));
+    const availW = Math.max(260, width - padX * 2);
+    const availH = Math.max(180, height - hudTop - scoreH - padY * 2);
+
+    // Mantém proporção horizontal clássica ~1.65:1 sem cortar em telas largas ou estreitas
+    let fw = availW;
+    let fh = fw / 1.65;
+    if (fh > availH) {
+      fh = availH;
+      fw = fh * 1.65;
+    }
+
+    const fx = (width - fw) / 2;
+    const fy = hudTop + scoreH + (availH - fh) / 2 + padY * 0.4;
+    const goalW = Math.max(22, Math.min(34, fw * 0.048));
+    const goalH = fh * 0.36;
+    const goalTop = fy + (fh - goalH) / 2;
+    const goalBottom = goalTop + goalH;
+    const btnR = Math.max(13, Math.min(23, fh * 0.068));
+    const ballR = Math.max(8, Math.min(13, btnR * 0.56));
+
+    return {
+      fx, fy, fw, fh,
+      cx: fx + fw / 2,
+      cy: fy + fh / 2,
+      goalW, goalH, goalTop, goalBottom,
+      btnR, ballR,
+      scoreY: hudTop + 8,
+      scoreH
+    };
+  },
+
+  buildFormation(m) {
+    const { fx, fy, fw, fh, cy, btnR } = m;
+    const buttons = [];
+
+    // Formação 5x5 equilibrada: Goleiro + 2 Defensores + 2 Atacantes
+    const leftPositions = [
+      { rx: 0.075, ry: 0.50, role: 'GK' },
+      { rx: 0.21, ry: 0.27, role: 'DF' },
+      { rx: 0.21, ry: 0.73, role: 'DF' },
+      { rx: 0.37, ry: 0.35, role: 'AT' },
+      { rx: 0.37, ry: 0.65, role: 'AT' }
+    ];
+
+    leftPositions.forEach((p, idx) => {
+      buttons.push({
+        id: 'p1_' + idx,
+        team: 'p1',
+        x: fx + fw * p.rx,
+        y: fy + fh * p.ry,
+        vx: 0,
+        vy: 0,
+        r: btnR,
+        mass: 2.5,
+        role: p.role
+      });
+    });
+
+    leftPositions.forEach((p, idx) => {
+      buttons.push({
+        id: 'p2_' + idx,
+        team: 'p2',
+        x: fx + fw * (1 - p.rx),
+        y: fy + fh * p.ry,
+        vx: 0,
+        vy: 0,
+        r: btnR,
+        mass: 2.5,
+        role: p.role
+      });
+    });
+
+    const ball = {
+      x: fx + fw / 2,
+      y: cy,
+      vx: 0,
+      vy: 0,
+      r: m.ballR,
+      mass: 1.0,
+      spin: 0
+    };
+
+    return { buttons, ball };
+  },
+
+  onEnter(ctxApi) {
+    const { width, height } = ctxApi.getViewport();
+    const m = this.getFieldMetrics(width, height);
+    const { buttons, ball } = this.buildFormation(m);
+
+    ctxApi.mgState = {
+      width,
+      height,
+      metrics: m,
+      buttons,
+      ball,
+      turn: 'p1', // 'p1' (Noivo / Esq) | 'p2' (Noiva / Dir)
+      phase: 'aim', // 'aim' | 'moving' | 'goal' | 'gameover'
+      scoreP1: 0,
+      scoreP2: 0,
+      goalsToWin: 3,
+      dragBtnId: null,
+      dragX: 0,
+      dragY: 0,
+      goalTimer: 0,
+      goalBanner: '',
+      goalColor: '#ffd166',
+      winnerTeam: null,
+      gameoverTimer: 0,
+      shotCount: 0
+    };
+  },
+
+  resetPositions(st, kickoffTeam) {
+    const m = st.metrics;
+    const fresh = this.buildFormation(m);
+    st.buttons = fresh.buttons;
+    st.ball = fresh.ball;
+    st.turn = kickoffTeam;
+    st.phase = 'aim';
+    st.dragBtnId = null;
+  },
+
+  canCurrentDeviceControlTurn(st, ctxApi) {
+    if (st.phase !== 'aim') return false;
+    const mode = ctxApi.getMode ? ctxApi.getMode() : 'local';
+    if (mode === 'host') return st.turn === 'p1';
+    if (mode === 'guest') return st.turn === 'p2';
+    return true;
+  },
+
+  onPointerDown(x, y, ctxApi, isRemote = false) {
+    const st = ctxApi.mgState;
+    if (!st || st.phase !== 'aim') return;
+
+    // Em modo Online, cada aparelho só pode interagir diretamente no seu próprio turno
+    if (!isRemote && !this.canCurrentDeviceControlTurn(st, ctxApi)) return;
+
+    let chosen = null;
+    let bestDist = Infinity;
+    for (const b of st.buttons) {
+      if (b.team !== st.turn) continue;
+      const d = Math.hypot(x - b.x, y - b.y);
+      if (d <= b.r * 1.45 && d < bestDist) {
+        bestDist = d;
+        chosen = b;
+      }
+    }
+
+    if (chosen) {
+      st.dragBtnId = chosen.id;
+      st.dragX = x;
+      st.dragY = y;
+    }
+  },
+
+  onPointerMove(x, y, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st || st.phase !== 'aim' || !st.dragBtnId) return;
+    st.dragX = x;
+    st.dragY = y;
+  },
+
+  onPointerUp(ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st || st.phase !== 'aim' || !st.dragBtnId) return;
+
+    const btn = st.buttons.find((b) => b.id === st.dragBtnId);
+    st.dragBtnId = null;
+    if (!btn) return;
+
+    const dx = btn.x - st.dragX;
+    const dy = btn.y - st.dragY;
+    const dist = Math.hypot(dx, dy);
+
+    // Cancela se o jogador soltou em cima do próprio botão
+    if (dist < 10) return;
+
+    const maxPull = Math.min(130, st.metrics.fw * 0.19);
+    const powerRatio = Math.min(1, dist / maxPull);
+    const maxLaunchSpeed = Math.max(680, st.metrics.fw * 1.15);
+    const speed = powerRatio * maxLaunchSpeed;
+
+    btn.vx = (dx / dist) * speed;
+    btn.vy = (dy / dist) * speed;
+    st.phase = 'moving';
+    st.shotCount++;
+
+    if (ctxApi.sfx?.playBounce) ctxApi.sfx.playBounce();
+    ctxApi.particles(btn.x, btn.y, btn.team === 'p1' ? '#38bdf8' : '#ff5d8f', 8, 120);
+  },
+
+  resolveCircleCollision(a, b, restitution) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = a.r + b.r;
+    if (dist === 0 || dist >= minDist) return false;
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const overlap = minDist - dist;
+
+    const invMassA = 1 / a.mass;
+    const invMassB = 1 / b.mass;
+    const invMassSum = invMassA + invMassB;
+
+    // Separa os círculos proporcionalmente à massa inversa
+    a.x -= nx * overlap * (invMassA / invMassSum);
+    a.y -= ny * overlap * (invMassA / invMassSum);
+    b.x += nx * overlap * (invMassB / invMassSum);
+    b.y += ny * overlap * (invMassB / invMassSum);
+
+    const rvx = b.vx - a.vx;
+    const rvy = b.vy - a.vy;
+    const velAlongNormal = rvx * nx + rvy * ny;
+    if (velAlongNormal > 0) return false;
+
+    const j = (-(1 + restitution) * velAlongNormal) / invMassSum;
+    const impulseX = j * nx;
+    const impulseY = j * ny;
+
+    a.vx -= impulseX * invMassA;
+    a.vy -= impulseY * invMassA;
+    b.vx += impulseX * invMassB;
+    b.vy += impulseY * invMassB;
+    return true;
+  },
+
+  onUpdate(dt, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+
+    const { width, height } = ctxApi.getViewport();
+    if (Math.abs(width - st.width) > 2 || Math.abs(height - st.height) > 2) {
+      // Reajusta escala proporcional se a janela/celular girar
+      const oldM = st.metrics;
+      const newM = this.getFieldMetrics(width, height);
+      const sx = newM.fw / oldM.fw;
+      const sy = newM.fh / oldM.fh;
+      st.buttons.forEach((b) => {
+        b.x = newM.fx + (b.x - oldM.fx) * sx;
+        b.y = newM.fy + (b.y - oldM.fy) * sy;
+        b.r = newM.btnR;
+      });
+      st.ball.x = newM.fx + (st.ball.x - oldM.fx) * sx;
+      st.ball.y = newM.fy + (st.ball.y - oldM.fy) * sy;
+      st.ball.r = newM.ballR;
+      st.metrics = newM;
+      st.width = width;
+      st.height = height;
+    }
+
+    const m = st.metrics;
+
+    // Se for Guest em modo Online, a física autoritativa vem do Host
+    const mode = ctxApi.getMode ? ctxApi.getMode() : 'local';
+    if (mode === 'guest') {
+      return;
+    }
+
+    if (st.phase === 'gameover') {
+      st.gameoverTimer -= dt;
+      if (st.gameoverTimer <= 0) {
+        const names = ctxApi.getNames();
+        const winnerName = st.winnerTeam === 'p1' ? names.groom : names.bride;
+        const loserName = st.winnerTeam === 'p1' ? names.bride : names.groom;
+        const winScore = st.winnerTeam === 'p1' ? st.scoreP1 : st.scoreP2;
+        const loseScore = st.winnerTeam === 'p1' ? st.scoreP2 : st.scoreP1;
+
+        if (mode === 'host') {
+          if (st.winnerTeam === 'p1') {
+            ctxApi.victory(`${winnerName} venceu o Futebol de Botão por ${winScore} x ${loseScore}!`);
+          } else {
+            ctxApi.batatinha(`${names.groom} perdeu o Futebol de Botão para ${names.bride} (${winScore} x ${loseScore})!`, {
+              x: m.cx, y: m.cy, r: 50
+            });
+          }
+        } else {
+          ctxApi.batatinha(`${loserName} levou 3 gols no Futebol de Botão! ${winnerName} venceu por ${winScore} x ${loseScore}!`, {
+            x: m.cx, y: m.cy, r: 50
+          });
+        }
+      }
+      return;
+    }
+
+    if (st.phase === 'goal') {
+      st.goalTimer -= dt;
+      if (st.goalTimer <= 0) {
+        if (st.scoreP1 >= st.goalsToWin || st.scoreP2 >= st.goalsToWin) {
+          st.winnerTeam = st.scoreP1 >= st.goalsToWin ? 'p1' : 'p2';
+          st.phase = 'gameover';
+          st.gameoverTimer = 0.25;
+        } else {
+          const kickoff = st.lastScorer === 'p1' ? 'p2' : 'p1';
+          this.resetPositions(st, kickoff);
+        }
+      }
+      return;
+    }
+
+    if (st.phase !== 'moving') return;
+
+    const subSteps = 4;
+    const subDt = dt / subSteps;
+    const btnFriction = Math.pow(0.984, subDt * 60);
+    const ballFriction = Math.pow(0.989, subDt * 60);
+    const entities = [...st.buttons, st.ball];
+
+    // Traves fixas dos dois gols (4 postes)
+    const posts = [
+      { x: m.fx, y: m.goalTop, r: 5, mass: 1e9, vx: 0, vy: 0 },
+      { x: m.fx, y: m.goalBottom, r: 5, mass: 1e9, vx: 0, vy: 0 },
+      { x: m.fx + m.fw, y: m.goalTop, r: 5, mass: 1e9, vx: 0, vy: 0 },
+      { x: m.fx + m.fw, y: m.goalBottom, r: 5, mass: 1e9, vx: 0, vy: 0 }
+    ];
+
+    for (let step = 0; step < subSteps; step++) {
+      // 1. Integração e Atrito
+      for (const ent of entities) {
+        ent.x += ent.vx * subDt;
+        ent.y += ent.vy * subDt;
+        const fric = ent === st.ball ? ballFriction : btnFriction;
+        ent.vx *= fric;
+        ent.vy *= fric;
+      }
+
+      // 2. Colisões com tabelas do campo e gols
+      for (const ent of entities) {
+        // Topo e Fundo
+        if (ent.y - ent.r < m.fy) {
+          ent.y = m.fy + ent.r;
+          ent.vy = Math.abs(ent.vy) * 0.85;
+        } else if (ent.y + ent.r > m.fy + m.fh) {
+          ent.y = m.fy + m.fh - ent.r;
+          ent.vy = -Math.abs(ent.vy) * 0.85;
+        }
+
+        const inGoalY = ent.y > m.goalTop + ent.r * 0.25 && ent.y < m.goalBottom - ent.r * 0.25;
+
+        if (ent === st.ball && inGoalY) {
+          // Bola pode entrar nos bolsos laterais dos gols!
+          if (ent.x - ent.r < m.fx - m.goalW) {
+            ent.x = m.fx - m.goalW + ent.r;
+            ent.vx = Math.abs(ent.vx) * 0.4;
+          } else if (ent.x + ent.r > m.fx + m.fw + m.goalW) {
+            ent.x = m.fx + m.fw + m.goalW - ent.r;
+            ent.vx = -Math.abs(ent.vx) * 0.4;
+          }
+        } else {
+          // Botões e bola fora da boca do gol rebatem nas linhas de fundo
+          if (ent.x - ent.r < m.fx) {
+            ent.x = m.fx + ent.r;
+            ent.vx = Math.abs(ent.vx) * 0.85;
+          } else if (ent.x + ent.r > m.fx + m.fw) {
+            ent.x = m.fx + m.fw - ent.r;
+            ent.vx = -Math.abs(ent.vx) * 0.85;
+          }
+        }
+      }
+
+      // 3. Colisão com as 4 traves
+      for (const ent of entities) {
+        for (const post of posts) {
+          this.resolveCircleCollision(ent, post, 0.88);
+        }
+      }
+
+      // 4. Colisões elásticas entre botões e bola
+      let hitAny = false;
+      for (let i = 0; i < entities.length; i++) {
+        for (let j = i + 1; j < entities.length; j++) {
+          if (this.resolveCircleCollision(entities[i], entities[j], 0.88)) {
+            hitAny = true;
+          }
+        }
+      }
+      if (hitAny && step === 0 && ctxApi.sfx?.playClick) {
+        ctxApi.sfx.playClick();
+      }
+
+      // 5. Detecção de GOL (bola cruzou completamente a linha do gol)
+      if (st.ball.x + st.ball.r * 0.35 < m.fx && st.ball.y > m.goalTop && st.ball.y < m.goalBottom) {
+        // Gol da Noiva (Time Direito marcou no gol esquerdo!)
+        st.scoreP2++;
+        st.lastScorer = 'p2';
+        st.phase = 'goal';
+        st.goalTimer = 1.6;
+        const names = ctxApi.getNames();
+        st.goalBanner = `⚽ GOOOOL DE ${names.bride.toUpperCase()}!`;
+        st.goalColor = '#ff5d8f';
+        ctxApi.confetti(70);
+        if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+        return;
+      }
+      if (st.ball.x - st.ball.r * 0.35 > m.fx + m.fw && st.ball.y > m.goalTop && st.ball.y < m.goalBottom) {
+        // Gol do Noivo (Time Esquerdo marcou no gol direito!)
+        st.scoreP1++;
+        st.lastScorer = 'p1';
+        st.phase = 'goal';
+        st.goalTimer = 1.6;
+        const names = ctxApi.getNames();
+        st.goalBanner = `⚽ GOOOOL DE ${names.groom.toUpperCase()}!`;
+        st.goalColor = '#38bdf8';
+        ctxApi.confetti(70);
+        if (ctxApi.sfx?.playAltarFanfare) ctxApi.sfx.playAltarFanfare();
+        return;
+      }
+    }
+
+    // 6. Verifica se todas as peças pararam para passar o turno
+    let anyMoving = false;
+    for (const ent of entities) {
+      if (Math.hypot(ent.vx, ent.vy) > 7) {
+        anyMoving = true;
+        break;
+      } else {
+        ent.vx = 0;
+        ent.vy = 0;
+      }
+    }
+
+    if (!anyMoving) {
+      st.turn = st.turn === 'p1' ? 'p2' : 'p1';
+      st.phase = 'aim';
+    }
+  },
+
+  onRender(ctx, ctxApi) {
+    const st = ctxApi.mgState;
+    if (!st) return;
+
+    const { width, height } = ctxApi.getViewport();
+    const m = st.metrics;
+    const names = ctxApi.getNames();
+    const time = ctxApi.getTime();
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // 1. Fundo de Estádio Noturno Vibrante
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+    bgGrad.addColorStop(0, '#0f172a');
+    bgGrad.addColorStop(1, '#064e3b');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. Placar Nítido no Topo com Avatares Reais do Casal
+    const sbW = Math.min(width - 24, 540);
+    const sbH = m.scoreH - 6;
+    const sbX = (width - sbW) / 2;
+    const sbY = m.scoreY;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(sbX, sbY, sbW, sbH, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    const avatarR = Math.min(20, sbH * 0.38);
+    // Avatar Noivo (Esquerda)
+    if (ctxApi.drawCoupleAvatar) {
+      ctxApi.drawCoupleAvatar(ctx, 'groom', sbX + avatarR + 12, sbY + sbH / 2, avatarR, st.turn === 'p1' ? '#38bdf8' : '#475569');
+      ctxApi.drawCoupleAvatar(ctx, 'bride', sbX + sbW - avatarR - 12, sbY + sbH / 2, avatarR, st.turn === 'p2' ? '#ff5d8f' : '#475569');
+    }
+
+    ctx.textBaseline = 'middle';
+    // Nome Noivo
+    ctx.fillStyle = st.turn === 'p1' ? '#38bdf8' : '#cbd5e1';
+    ctx.font = '700 13px Fredoka, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(names.groom.slice(0, 12), sbX + avatarR * 2 + 20, sbY + sbH / 2 - 8);
+    ctx.fillStyle = st.turn === 'p1' ? '#ffd166' : '#64748b';
+    ctx.font = '600 10px Fredoka, sans-serif';
+    ctx.fillText(st.turn === 'p1' ? '● SUA VEZ' : 'AGUARDANDO', sbX + avatarR * 2 + 20, sbY + sbH / 2 + 10);
+
+    // Nome Noiva
+    ctx.fillStyle = st.turn === 'p2' ? '#ff5d8f' : '#cbd5e1';
+    ctx.font = '700 13px Fredoka, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(names.bride.slice(0, 12), sbX + sbW - avatarR * 2 - 20, sbY + sbH / 2 - 8);
+    ctx.fillStyle = st.turn === 'p2' ? '#ffd166' : '#64748b';
+    ctx.font = '600 10px Fredoka, sans-serif';
+    ctx.fillText(st.turn === 'p2' ? 'SUA VEZ ●' : 'AGUARDANDO', sbX + sbW - avatarR * 2 - 20, sbY + sbH / 2 + 10);
+
+    // Placar Central
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 24px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${st.scoreP1} - ${st.scoreP2}`, width / 2, sbY + sbH / 2 - 2);
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 10px Fredoka, sans-serif';
+    ctx.fillText('META: 3 GOLS', width / 2, sbY + sbH - 9);
+    ctx.restore();
+
+    // 3. Moldura Externa do Campo & Gramado Esmeralda em Faixas Verticais Vívidas
+    ctx.save();
+    ctx.fillStyle = '#064e3b';
+    ctx.beginPath();
+    ctx.roundRect(m.fx - 10, m.fy - 10, m.fw + 20, m.fh + 20, 14);
+    ctx.fill();
+
+    // Faixas verticais de grama em dois tons de verde esmeralda bem vívido
+    ctx.beginPath();
+    ctx.rect(m.fx, m.fy, m.fw, m.fh);
+    ctx.clip();
+
+    const stripes = 12;
+    const stripeW = m.fw / stripes;
+    for (let i = 0; i < stripes; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#10b981' : '#059669';
+      ctx.fillRect(m.fx + i * stripeW, m.fy, stripeW + 1, m.fh);
+    }
+    ctx.restore();
+
+    // 4. Linhas Brancas Nítidas do Campo
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.94)';
+    ctx.lineWidth = 2.6;
+
+    // Borda externa
+    ctx.strokeRect(m.fx, m.fy, m.fw, m.fh);
+
+    // Linha do meio-campo
+    ctx.beginPath();
+    ctx.moveTo(m.cx, m.fy);
+    ctx.lineTo(m.cx, m.fy + m.fh);
+    ctx.stroke();
+
+    // Círculo central + ponto
+    const centerR = m.fh * 0.19;
+    ctx.beginPath();
+    ctx.arc(m.cx, m.cy, centerR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(m.cx, m.cy, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Grandes Áreas e Pequenas Áreas (Esquerda e Direita)
+    const boxW = m.fw * 0.15;
+    const boxH = m.fh * 0.54;
+    const smallBoxW = m.fw * 0.06;
+    const smallBoxH = m.fh * 0.30;
+
+    // Esquerda
+    ctx.strokeRect(m.fx, m.cy - boxH / 2, boxW, boxH);
+    ctx.strokeRect(m.fx, m.cy - smallBoxH / 2, smallBoxW, smallBoxH);
+    ctx.beginPath();
+    ctx.arc(m.fx + m.fw * 0.11, m.cy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(m.fx + m.fw * 0.11, m.cy, m.fh * 0.14, -0.78, 0.78);
+    ctx.stroke();
+
+    // Direita
+    ctx.strokeRect(m.fx + m.fw - boxW, m.cy - boxH / 2, boxW, boxH);
+    ctx.strokeRect(m.fx + m.fw - smallBoxW, m.cy - smallBoxH / 2, smallBoxW, smallBoxH);
+    ctx.beginPath();
+    ctx.arc(m.fx + m.fw * 0.89, m.cy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(m.fx + m.fw * 0.89, m.cy, m.fh * 0.14, Math.PI - 0.78, Math.PI + 0.78);
+    ctx.stroke();
+
+    // Arcos de Escanteio
+    const cr = 13;
+    [
+      [m.fx, m.fy, 0, Math.PI / 2],
+      [m.fx + m.fw, m.fy, Math.PI / 2, Math.PI],
+      [m.fx + m.fw, m.fy + m.fh, Math.PI, Math.PI * 1.5],
+      [m.fx, m.fy + m.fh, Math.PI * 1.5, Math.PI * 2]
+    ].forEach(([cxC, cyC, a1, a2]) => {
+      ctx.beginPath();
+      ctx.arc(cxC, cyC, cr, a1, a2);
+      ctx.stroke();
+    });
+    ctx.restore();
+
+    // 5. Gols com Redes Quadriculadas
+    const drawGoalNet = (gx, gy, gw, gh, isLeft) => {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+      ctx.fillRect(gx, gy, gw, gh);
+
+      ctx.beginPath();
+      ctx.rect(gx, gy, gw, gh);
+      ctx.clip();
+
+      // Malha quadriculada branca
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.lineWidth = 1.2;
+      const step = 8;
+      for (let x = gx; x <= gx + gw; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, gy);
+        ctx.lineTo(x, gy + gh);
+        ctx.stroke();
+      }
+      for (let y = gy; y <= gy + gh; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(gx, y);
+        ctx.lineTo(gx + gw, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Estrutura metálica do gol + postes
+      ctx.save();
+      ctx.strokeStyle = isLeft ? '#38bdf8' : '#ff5d8f';
+      ctx.lineWidth = 3.5;
+      ctx.strokeRect(gx, gy, gw, gh);
+
+      ctx.fillStyle = '#ffffff';
+      const postX = isLeft ? gx + gw : gx;
+      [gy, gy + gh].forEach((py) => {
+        ctx.beginPath();
+        ctx.arc(postX, py, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+      ctx.restore();
+    };
+
+    drawGoalNet(m.fx - m.goalW, m.goalTop, m.goalW, m.goalH, true);
+    drawGoalNet(m.fx + m.fw, m.goalTop, m.goalW, m.goalH, false);
+
+    // 6. Mira Direcional + Medidor de Força ao Arrastar
+    if (st.phase === 'aim' && st.dragBtnId) {
+      const btn = st.buttons.find((b) => b.id === st.dragBtnId);
+      if (btn) {
+        const dx = btn.x - st.dragX;
+        const dy = btn.y - st.dragY;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= 10) {
+          const maxPull = Math.min(130, m.fw * 0.19);
+          const ratio = Math.min(1, dist / maxPull);
+          const aimLen = 40 + ratio * 120;
+          const angle = Math.atan2(dy, dx);
+          const tipX = btn.x + Math.cos(angle) * aimLen;
+          const tipY = btn.y + Math.sin(angle) * aimLen;
+
+          const pwrColor = ratio < 0.45 ? '#22c55e' : ratio < 0.78 ? '#facc15' : '#ef4444';
+
+          ctx.save();
+          // Anel de potência ao redor do botão
+          ctx.beginPath();
+          ctx.arc(btn.x, btn.y, btn.r + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+          ctx.strokeStyle = pwrColor;
+          ctx.lineWidth = 5;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          // Linha elástica de puxada
+          ctx.setLineDash([5, 5]);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(btn.x, btn.y);
+          ctx.lineTo(st.dragX, st.dragY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Seta direcional à frente
+          ctx.strokeStyle = pwrColor;
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.moveTo(btn.x, btn.y);
+          ctx.lineTo(tipX, tipY);
+          ctx.stroke();
+
+          // Ponta da seta
+          ctx.fillStyle = pwrColor;
+          ctx.beginPath();
+          ctx.moveTo(tipX + Math.cos(angle) * 12, tipY + Math.sin(angle) * 12);
+          ctx.lineTo(tipX + Math.cos(angle + 2.45) * 12, tipY + Math.sin(angle + 2.45) * 12);
+          ctx.lineTo(tipX + Math.cos(angle - 2.45) * 12, tipY + Math.sin(angle - 2.45) * 12);
+          ctx.closePath();
+          ctx.fill();
+
+          // Porcentagem de força
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '700 12px Fredoka, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${Math.round(ratio * 100)}%`, btn.x, btn.y - btn.r - 16);
+          ctx.restore();
+        }
+      }
+    }
+
+    // 7. Botões 5x5 com Borda Metálica, Anel Pulsante de Turno e Foto Real Recortada
+    const pulse = 0.55 + Math.sin(time * 6) * 0.45;
+    st.buttons.forEach((b) => {
+      const isP1 = b.team === 'p1';
+      const isTurnTeam = st.phase === 'aim' && b.team === st.turn;
+
+      ctx.save();
+      // Sombra no gramado
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.arc(b.x + 2, b.y + 4, b.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Anel luminoso pulsante no turno do jogador
+      if (isTurnTeam) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r + 4 + pulse * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = isP1
+          ? `rgba(56, 189, 248, ${0.45 + pulse * 0.5})`
+          : `rgba(255, 93, 143, ${0.45 + pulse * 0.5})`;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = isP1 ? '#38bdf8' : '#ff5d8f';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Aro metálico externo
+      const ringGrad = ctx.createLinearGradient(b.x - b.r, b.y - b.r, b.x + b.r, b.y + b.r);
+      if (isP1) {
+        ringGrad.addColorStop(0, '#7dd3fc');
+        ringGrad.addColorStop(0.5, '#0284c7');
+        ringGrad.addColorStop(1, '#1e3a8a');
+      } else {
+        ringGrad.addColorStop(0, '#ffd166');
+        ringGrad.addColorStop(0.5, '#ff5d8f');
+        ringGrad.addColorStop(1, '#9d174d');
+      }
+
+      ctx.fillStyle = ringGrad;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Borda fina brilhante
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      // Foto Real do Noivo ou da Noiva recortada perfeitamente em círculo no centro
+      const photoR = b.r - 4.5;
+      if (ctxApi.drawCoupleAvatar) {
+        ctxApi.drawCoupleAvatar(ctx, isP1 ? 'groom' : 'bride', b.x, b.y, photoR);
+      }
+
+      // Brilho vítreo sutil de botão de acrílico
+      ctx.beginPath();
+      ctx.arc(b.x, b.y - b.r * 0.18, photoR * 0.86, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 8. Bola de Futebol Clássica
+    const ball = st.ball;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.arc(ball.x + 2, ball.y + 3, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Pentágono central + detalhes da bola
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    for (let k = 0; k < 5; k++) {
+      const a = (k * Math.PI * 2) / 5;
+      ctx.beginPath();
+      ctx.arc(ball.x + Math.cos(a) * ball.r * 0.78, ball.y + Math.sin(a) * ball.r * 0.78, ball.r * 0.19, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 9. Banner de Gol Comemorativo
+    if (st.phase === 'goal' && st.goalBanner) {
+      ctx.save();
+      const bw = Math.min(width - 40, 460);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.strokeStyle = st.goalColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - bw / 2, m.cy - 34, bw, 68, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 22px Fredoka, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(st.goalBanner, width / 2, m.cy);
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 };
 
 
 // ============================================================================
-// minigames.js - Gerenciador Central dos 11 Minigames da Lua de Mel
-// Importa e orquestra games_part1.js (1-4), games_part2.js (5-8) e games_part3.js (9-11)
+// minigames.js - Gerenciador Central dos 12 Minigames da Lua de Mel
+// Importa e orquestra games_part1.js (1-4), games_part2.js (5-8) e games_part3.js (9-12)
 // ============================================================================
 
 
@@ -4673,7 +7727,8 @@ const HONEYMOON_MINIGAMES = [
   Minigame8_TopGear,
   Minigame9_ColarProva,
   Minigame10_VoceEhIA,
-  Minigame11_Torre
+  Minigame11_Torre,
+  Minigame12_FutebolBotao
 ];
 
 const MINIGAME_CATALOG = [
@@ -4749,6 +7804,80 @@ class MinigameProgression {
 const sfx = new SoundManager();
 const net = new NetworkManager();
 const progression = new MinigameProgression();
+
+// ============================================================================
+// PRÉ-CARREGAMENTO SEGURO DAS FOTOS REAIS DO CASAL (COM FALLBACK CARTOON)
+// ============================================================================
+const couplePhotos = {
+  groom: { img: new Image(), loaded: false, error: false, src: 'noivo.png' },
+  bride: { img: new Image(), loaded: false, error: false, src: 'noiva.png' }
+};
+
+function preloadCouplePhotos() {
+  ['groom', 'bride'].forEach((key) => {
+    const entry = couplePhotos[key];
+    entry.img.onload = () => {
+      if (entry.img.naturalWidth > 0 && entry.img.naturalHeight > 0) {
+        entry.loaded = true;
+        entry.error = false;
+      }
+    };
+    entry.img.onerror = () => {
+      entry.error = true;
+      entry.loaded = false;
+    };
+    entry.img.src = entry.src;
+  });
+}
+preloadCouplePhotos();
+
+function drawCoupleAvatar(targetCtx, who, cx, cy, r, borderColor = null) {
+  const isGroom = who === 'groom' || who === 'p1';
+  const entry = isGroom ? couplePhotos.groom : couplePhotos.bride;
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  targetCtx.clip();
+
+  if (entry && entry.loaded && !entry.error && entry.img.naturalWidth > 0) {
+    const iw = entry.img.naturalWidth;
+    const ih = entry.img.naturalHeight;
+    const scale = Math.max((r * 2) / iw, (r * 2) / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = cx - dw / 2;
+    // Leve viés superior para centralizar o rosto em retratos verticais
+    const dy = cy - dh * 0.42;
+    targetCtx.drawImage(entry.img, dx, dy, dw, dh);
+  } else {
+    // Fallback cartoon nítido caso a foto não carregue
+    targetCtx.fillStyle = isGroom ? '#1e3a8a' : '#9d174d';
+    targetCtx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    targetCtx.font = `${Math.max(12, Math.floor(r * 1.15))}px sans-serif`;
+    targetCtx.textAlign = 'center';
+    targetCtx.textBaseline = 'middle';
+    targetCtx.fillText(isGroom ? '🤵' : '👰', cx, cy + 1);
+  }
+  targetCtx.restore();
+
+  if (borderColor) {
+    targetCtx.save();
+    targetCtx.beginPath();
+    targetCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    targetCtx.strokeStyle = borderColor;
+    targetCtx.lineWidth = Math.max(2, r * 0.14);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+}
+
+function resetAllKeys() {
+  Object.keys(state.keys).forEach((k) => {
+    state.keys[k] = false;
+  });
+}
+window.addEventListener('blur', resetAllKeys);
 
 // Referências DOM
 const canvas = document.getElementById('game-canvas');
@@ -4883,6 +8012,32 @@ const PHASE1_OBSTACLE_TYPES = [
     w: 68,
     h: 52,
     quote: 'O drone do fotógrafo enroscou no cabelo antes do altar!'
+  },
+  {
+    id: 'fotografo',
+    placement: 'low',
+    actionText: '⬆️ PULE!',
+    label: 'FOTÓGRAFO APRESSADO',
+    sub: 'Flash na Cara!',
+    emoji: '📸',
+    color: '#0284c7',
+    accent: '#bae6fd',
+    w: 64,
+    h: 56,
+    quote: 'O fotógrafo se jogou na frente do casal para tirar foto!'
+  },
+  {
+    id: 'convite',
+    placement: 'high',
+    actionText: '⬇️ ABAIXE!',
+    label: 'PERGUNTA: "E A CASA?"',
+    sub: 'Fofoca no Ar!',
+    emoji: '💬',
+    color: '#d97706',
+    accent: '#fef3c7',
+    w: 68,
+    h: 54,
+    quote: 'Não abaixou a tempo e levou a pergunta "Já compraram a casa?" na cabeça!'
   }
 ];
 
@@ -4987,7 +8142,10 @@ const state = {
       duckTimer: 0,
       runCycle: 0
     },
-    obstacles: []
+    obstacles: [],
+    powerups: [],
+    powerupTimer: 3.5,
+    turboTimer: 0
   },
 
   // Dados da Fase 2 (Defesa do Bolo)
@@ -5004,7 +8162,14 @@ const state = {
     spawnTimer: 1.0,
     waveCount: 0,
     enemies: [],
-    projectiles: []
+    projectiles: [],
+    cakeHp: 100,
+    maxCakeHp: 100,
+    cakeShakeTimer: 0,
+    collectibles: [],
+    collectibleTimer: 3.5,
+    waiter: null,
+    waiterTimer: 14.0
   },
 
   // Efeitos visuais
@@ -5184,7 +8349,11 @@ const ctxApi = {
   getViewport: () => ({ width: state.width, height: state.height }),
   getKeys: () => state.keys,
   getNames: () => ({ groom: state.groomName, bride: state.brideName }),
+  getMode: () => state.mode,
   getTime: () => state.time,
+  getCouplePhotos: () => couplePhotos,
+  drawCoupleAvatar: (targetCtx, who, cx, cy, r, borderColor) =>
+    drawCoupleAvatar(targetCtx, who, cx, cy, r, borderColor),
   sfx,
   particles: (x, y, color, count, spd) => spawnParticles(x, y, color, count, spd),
   floatingText: (x, y, text, color) => spawnFloatingText(x, y, text, color),
@@ -5204,7 +8373,17 @@ const ctxApi = {
   }
 };
 
+function cleanupActiveMinigame() {
+  if (progression.activeMinigame && progression.activeMinigame.onExit) {
+    try { progression.activeMinigame.onExit(ctxApi); } catch (_) {}
+  }
+  progression.activeMinigame = null;
+  state.mgState = {};
+  resetAllKeys();
+}
+
 function openMinigamesHub() {
+  cleanupActiveMinigame();
   syncCoupleNamesFromInputs();
   state.screen = 'minigames';
   renderMinigamesGrid();
@@ -5246,12 +8425,11 @@ function renderMinigamesGrid() {
 }
 
 function startStageById(stageId, fromNetwork = false) {
+  cleanupActiveMinigame();
   const stage = progression.getStageById(stageId);
   if (stage.id === 'phase1') {
-    progression.activeMinigame = null;
     startPhase1(fromNetwork);
   } else if (stage.id === 'phase2') {
-    progression.activeMinigame = null;
     startPhase2(fromNetwork);
   } else {
     const mg = progression.getMinigameModule(stageId);
@@ -5287,7 +8465,11 @@ function startStageById(stageId, fromNetwork = false) {
 }
 
 function startPhase1(isResetFromNetwork = false) {
-  progression.activeMinigame = null;
+  cleanupActiveMinigame();
+  if (transitionTimerId) {
+    clearInterval(transitionTimerId);
+    transitionTimerId = null;
+  }
   syncCoupleNamesFromInputs();
   progression.unlockStage('phase1');
   state.screen = 'phase1';
@@ -5303,9 +8485,12 @@ function startPhase1(isResetFromNetwork = false) {
   p1.spawnTimer = 1.3;
   p1.altarSpawned = false;
   p1.altarX = state.width + 400;
-  p1.p1 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0 };
-  p1.p2 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0 };
+  p1.p1 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0, hasShield: false };
+  p1.p2 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0, hasShield: false };
   p1.obstacles = [];
+  p1.powerups = [];
+  p1.powerupTimer = 3.2;
+  p1.turboTimer = 0;
 
   hudPhaseBadge.textContent = 'FASE 1: CORRIDA AO ALTAR';
   hudModeBadge.textContent = state.mode === 'local' ? 'LOCAL' : `SALA: ${net.roomCode}`;
@@ -5390,6 +8575,13 @@ function startPhase2(fromNetwork = false) {
   p2.waveCount = 0;
   p2.enemies = [];
   p2.projectiles = [];
+  p2.cakeHp = 100;
+  p2.maxCakeHp = 100;
+  p2.cakeShakeTimer = 0;
+  p2.collectibles = [];
+  p2.collectibleTimer = 3.5;
+  p2.waiter = null;
+  p2.waiterTimer = 14.0;
 
   hudPhaseBadge.textContent = 'FASE 2: DEFESA DO BOLO';
   hudProgressContainer.classList.add('hidden');
@@ -5406,12 +8598,13 @@ function startPhase2(fromNetwork = false) {
 }
 
 function triggerBatatinha(customReason, phaseNum, culpritInfo = null, fromNetwork = false) {
-  if (state.screen === 'batatinha') return;
+  if (state.screen === 'batatinha' || state.screen === 'victory') return;
 
   if (transitionTimerId) {
     clearInterval(transitionTimerId);
     transitionTimerId = null;
   }
+  resetAllKeys();
 
   state.screen = 'batatinha';
   state.failedPhase = phaseNum;
@@ -5471,7 +8664,8 @@ function triggerBatatinha(customReason, phaseNum, culpritInfo = null, fromNetwor
 function triggerVictory(fromNetwork = false) {
   if (state.screen === 'victory') return;
   state.screen = 'victory';
-  state.freezeFrame = false;
+  state.freezeFrame = true;
+  resetAllKeys();
 
   const victoryTitle = document.querySelector('.victory-title');
   const victoryCoupleNames = document.getElementById('victory-couple-names');
@@ -5506,7 +8700,8 @@ function triggerMinigameVictory(message, fromNetwork = false) {
   }
 
   state.screen = 'victory';
-  state.freezeFrame = false;
+  state.freezeFrame = true;
+  resetAllKeys();
 
   const victoryTitle = document.querySelector('.victory-title');
   const victoryCoupleNames = document.getElementById('victory-couple-names');
@@ -5841,7 +9036,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
 });
 
-window.addEventListener('pointerup', () => {
+const handleCanvasPointerRelease = () => {
   if (!progression.activeMinigame) return;
   if (progression.activeMinigame.onPointerUp) {
     progression.activeMinigame.onPointerUp(ctxApi);
@@ -5849,7 +9044,10 @@ window.addEventListener('pointerup', () => {
   if (state.mode === 'guest' || state.mode === 'host') {
     net.send({ type: 'mg_pointer_up' });
   }
-});
+};
+
+window.addEventListener('pointerup', handleCanvasPointerRelease);
+window.addEventListener('pointercancel', handleCanvasPointerRelease);
 
 canvas.addEventListener('wheel', (e) => {
   if (!progression.activeMinigame) return;
@@ -6009,7 +9207,12 @@ function updatePhase1(dt) {
   // Se for Guest no modo Online, apenas interpola visualmente o estado vindo do Host
   if (state.mode === 'guest') return;
 
-  const speed = p1.speed + p1.progress * 1.4;
+  if (!p1.powerups) p1.powerups = [];
+  if (p1.turboTimer > 0) p1.turboTimer -= dt;
+
+  let speed = p1.speed + p1.progress * 1.4;
+  if (p1.turboTimer > 0) speed *= 1.40;
+
   p1.scrollX += speed * dt;
   p1.progress = Math.min(100, p1.progress + (100 / p1.duration) * dt);
 
@@ -6036,6 +9239,57 @@ function updatePhase1(dt) {
   if (p1.spawnTimer <= 0) {
     spawnPhase1Obstacle();
     p1.spawnTimer = Math.max(1.05, 1.75 - (p1.progress / 100) * 0.55);
+  }
+
+  // Spawna Power-ups periódicos (Café Turbo, Escudo de Aliança, Buquê da Sorte)
+  p1.powerupTimer = (p1.powerupTimer || 3.5) - dt;
+  if (p1.powerupTimer <= 0 && p1.progress < 90) {
+    p1.powerupTimer = 4.0 + Math.random() * 2.8;
+    const pTypes = [
+      { id: 'coffee', emoji: '☕', name: 'CAFÉ TURBO', color: '#f59e0b' },
+      { id: 'shield', emoji: '💍', name: 'ESCUDO SAGRADO', color: '#ffd166' },
+      { id: 'bouquet', emoji: '💐', name: 'BUQUÊ DA SORTE', color: '#ec4899' }
+    ];
+    const pType = pTypes[Math.floor(Math.random() * pTypes.length)];
+    const pLane = Math.random() < 0.5 ? 0 : 1;
+    const isHigh = Math.random() < 0.35;
+    p1.powerups.push({
+      lane: pLane,
+      x: state.width + 60,
+      y: isHigh ? -36 : 0,
+      type: pType
+    });
+  }
+
+  // Atualiza e coleta Power-ups
+  const pX = getPhase1PlayerX();
+  for (let i = p1.powerups.length - 1; i >= 0; i--) {
+    const pu = p1.powerups[i];
+    pu.x -= speed * dt;
+    const actor = pu.lane === 0 ? p1.p1 : p1.p2;
+    const laneGroundY = getPhase1LaneY(pu.lane);
+    const actorCenterY = laneGroundY + actor.y - 25;
+    const puCenterY = laneGroundY + pu.y - 18;
+
+    if (Math.abs(pu.x - pX) < 32 && Math.abs(actorCenterY - puCenterY) < 38) {
+      if (pu.type.id === 'coffee') {
+        p1.turboTimer = 5.0;
+        spawnFloatingText(pX, laneGroundY - 60, '☕ CAFÉ TURBO +40%!', '#f59e0b');
+        sfx.playAltarFanfare();
+      } else if (pu.type.id === 'shield') {
+        actor.hasShield = true;
+        spawnFloatingText(pX, laneGroundY - 60, '💍 ESCUDO DE ALIANÇA!', '#ffd166');
+        sfx.playBounce();
+      } else if (pu.type.id === 'bouquet') {
+        p1.progress = Math.min(92, p1.progress + 8);
+        spawnFloatingText(pX, laneGroundY - 60, '💐 BUQUÊ DA SORTE +8%!', '#ec4899');
+        spawnConfettiBurst(25);
+        sfx.playAltarFanfare();
+      }
+      p1.powerups.splice(i, 1);
+      continue;
+    }
+    if (pu.x < -60) p1.powerups.splice(i, 1);
   }
 
   const playerX = getPhase1PlayerX();
@@ -6070,6 +9324,14 @@ function updatePhase1(dt) {
     }
 
     if (collided) {
+      if (actor.hasShield) {
+        actor.hasShield = false;
+        obs.x = -999;
+        spawnParticles(playerX + 20, laneGroundY - obs.h / 2, '#ffd166', 22, 240);
+        sfx.playBounce();
+        spawnFloatingText(playerX, laneGroundY - 65, '💍 ESCUDO SALVOU DO BOLETO!', '#ffd166');
+        continue;
+      }
       const victimName = obs.lane === 0 ? state.groomName : state.brideName;
       const highlightY = isHigh ? laneGroundY - 38 - obs.h / 2 : laneGroundY - obs.h / 2;
       triggerBatatinha(
@@ -6123,6 +9385,9 @@ function spawnPhase2Enemy() {
 
 function updatePhase2(dt) {
   const p2 = state.phase2;
+  const minDim = Math.min(state.width, state.height - 60);
+  p2.cakeRadius = Math.max(40, Math.min(58, minDim * 0.11));
+  p2.orbitRadius = p2.cakeRadius + Math.max(42, Math.min(64, minDim * 0.12));
   const angularSpeed = 3.2; // rad/s
 
   // Movimentação orbital do Jogador 1 (Noivo: A / D)
@@ -6138,6 +9403,9 @@ function updatePhase2(dt) {
   p2.p2Angle += p2Dir * angularSpeed * dt;
 
   if (state.mode === 'guest') return;
+
+  if (p2.cakeShakeTimer > 0) p2.cakeShakeTimer -= dt;
+  if (!p2.collectibles) p2.collectibles = [];
 
   // Atualiza cronômetro regressivo de 45s
   p2.timeLeft = Math.max(0, p2.timeLeft - dt);
@@ -6196,6 +9464,46 @@ function updatePhase2(dt) {
     }
   }
 
+  // Spawna Docinhos Coletáveis (Brigadeiros e Champanhe)
+  p2.collectibleTimer = (p2.collectibleTimer || 3.5) - dt;
+  if (p2.collectibleTimer <= 0) {
+    p2.collectibleTimer = 4.2 + Math.random() * 2.8;
+    const cTypes = [
+      { id: 'cupcake', emoji: '🧁', name: 'BRIGADEIRO', color: '#ec4899' },
+      { id: 'champagne', emoji: '🍾', name: 'CHAMPANHE', color: '#f59e0b' }
+    ];
+    const cType = cTypes[Math.random() < 0.65 ? 0 : 1];
+    const colAngle = Math.random() * Math.PI * 2;
+    p2.collectibles.push({
+      x: cx + Math.cos(colAngle) * p2.orbitRadius,
+      y: cy + Math.sin(colAngle) * p2.orbitRadius,
+      type: cType,
+      life: 8.0
+    });
+  }
+
+  // Evento Especial do Garçom com Coxinhas (Distração em Massa)
+  p2.waiterTimer = (p2.waiterTimer || 14.0) - dt;
+  if (p2.waiterTimer <= 0 && !p2.waiter) {
+    p2.waiterTimer = 16.0;
+    p2.waiter = {
+      x: -40,
+      y: cy - 130,
+      vx: 65,
+      timer: 6.0,
+      active: true
+    };
+    spawnFloatingText(cx, cy - 85, '🧑‍🍳 GARÇOM: SAINDO COXINHAS QUENTINHAS! 🥟', '#ffd166');
+    sfx.playAltarFanfare();
+  }
+  if (p2.waiter) {
+    p2.waiter.x += p2.waiter.vx * dt;
+    p2.waiter.timer -= dt;
+    if (p2.waiter.timer <= 0 || p2.waiter.x > state.width + 60) {
+      p2.waiter = null;
+    }
+  }
+
   // Spawna ondas de convidados famintos
   p2.spawnTimer -= dt;
   if (p2.spawnTimer <= 0) {
@@ -6211,6 +9519,38 @@ function updatePhase2(dt) {
   const p2Y = cy + Math.sin(p2.p2Angle) * p2.orbitRadius;
   const defenderHitRadius = 38;
 
+  // Jogadores coletam Brigadeiros e Champanhe na órbita
+  for (let c = p2.collectibles.length - 1; c >= 0; c--) {
+    const col = p2.collectibles[c];
+    col.life -= dt;
+    if (col.life <= 0) { p2.collectibles.splice(c, 1); continue; }
+
+    const distP1 = Math.hypot(col.x - p1X, col.y - p1Y);
+    const distP2 = Math.hypot(col.x - p2X, col.y - p2Y);
+    if (distP1 < 36 || distP2 < 36) {
+      if (col.type.id === 'cupcake') {
+        p2.cakeHp = Math.min(100, (p2.cakeHp || 100) + 25);
+        sfx.playBounce();
+        spawnParticles(col.x, col.y, '#ec4899', 16, 180);
+        spawnFloatingText(col.x, col.y - 20, '🧁 REPAROU O BOLO +25%!', '#06d6a0');
+      } else if (col.type.id === 'champagne') {
+        sfx.playAltarFanfare();
+        spawnParticles(cx, cy, '#ffd166', 35, 320);
+        spawnFloatingText(cx, cy - 60, '🍾 ONDA DE CHOQUE DE ESPUMA!', '#ffd166');
+        p2.enemies.forEach((e) => {
+          const ddx = e.x - cx;
+          const ddy = e.y - cy;
+          const dist = Math.hypot(ddx, ddy) || 1;
+          e.bounced = true;
+          e.vx = (ddx / dist) * 450;
+          e.vy = (ddy / dist) * 450;
+          e.life = 0.55;
+        });
+      }
+      p2.collectibles.splice(c, 1);
+    }
+  }
+
   for (let i = p2.enemies.length - 1; i >= 0; i--) {
     const en = p2.enemies[i];
 
@@ -6222,12 +9562,19 @@ function updatePhase2(dt) {
       continue;
     }
 
-    // Move em direção ao centro do Bolo de Casamento
-    const dx = cx - en.x;
-    const dy = cy - en.y;
-    const distToCenter = Math.hypot(dx, dy) || 1;
-    const dirX = dx / distToCenter;
-    const dirY = dy / distToCenter;
+    // Se o garçom estiver passando com coxinhas, convidados são atraídos por ele!
+    let targetX = cx;
+    let targetY = cy;
+    if (p2.waiter && p2.waiter.active) {
+      targetX = p2.waiter.x;
+      targetY = p2.waiter.y;
+    }
+    const dx = targetX - en.x;
+    const dy = targetY - en.y;
+    const distToCenter = Math.hypot(cx - en.x, cy - en.y) || 1;
+    const distToTarget = Math.hypot(dx, dy) || 1;
+    const dirX = dx / distToTarget;
+    const dirY = dy / distToTarget;
 
     en.wobblePhase += dt * 6;
     const perpX = -dirY * Math.sin(en.wobblePhase) * (en.type.wobble || 0.8) * 14;
@@ -6280,14 +9627,27 @@ function updatePhase2(dt) {
       continue;
     }
 
-    // 3. Checa se encostou no Bolo de Casamento -> BATATINHA!
+    // 3. Checa se encostou no Bolo de Casamento -> Dano no Glacê ou Batatinha!
     if (distToCenter < p2.cakeRadius + en.radius - 6) {
-      triggerBatatinha(
-        en.type.quote,
-        2,
-        { x: en.x, y: en.y, r: 42, label: en.type.name }
-      );
-      return;
+      p2.cakeHp = Math.max(0, (p2.cakeHp || 100) - 34);
+      p2.cakeShakeTimer = 0.45;
+      en.bounced = true;
+      en.vx = -(cx - en.x) / distToCenter * 350;
+      en.vy = -(cy - en.y) / distToCenter * 350;
+      en.life = 0.45;
+      sfx.playBounce();
+      spawnParticles(cx, cy, '#ff3355', 20, 200);
+      spawnFloatingText(cx, cy - 35, '🍰 MORDIDA NO GLACÊ! -34%', '#ef4444');
+
+      if (p2.cakeHp <= 0) {
+        triggerBatatinha(
+          en.type.quote,
+          2,
+          { x: en.x, y: en.y, r: 42, label: en.type.name }
+        );
+        return;
+      }
+      continue;
     }
   }
 }
@@ -6312,8 +9672,15 @@ function broadcastHostState(dt) {
       scrollX: p1.scrollX,
       altarSpawned: p1.altarSpawned,
       altarX: p1.altarX,
+      turboTimer: p1.turboTimer || 0,
       p1: p1.p1,
       p2: p1.p2,
+      powerups: (p1.powerups || []).map((pu) => ({
+        lane: pu.lane,
+        x: pu.x,
+        y: pu.y,
+        type: pu.type
+      })),
       obstacles: p1.obstacles.map((o) => ({
         lane: o.lane,
         x: o.x,
@@ -6327,8 +9694,16 @@ function broadcastHostState(dt) {
     net.send({
       type: 'sync_phase2',
       timeLeft: p2.timeLeft,
+      cakeHp: p2.cakeHp,
+      cakeShakeTimer: p2.cakeShakeTimer,
       p1Angle: p2.p1Angle,
       p2Angle: p2.p2Angle,
+      waiter: p2.waiter,
+      collectibles: (p2.collectibles || []).map((c) => ({
+        x: c.x,
+        y: c.y,
+        type: c.type
+      })),
       enemies: p2.enemies.map((e) => ({
         x: e.x,
         y: e.y,
@@ -6341,6 +9716,29 @@ function broadcastHostState(dt) {
         emoji: pr.emoji
       }))
     });
+  } else if (progression.activeMinigame && progression.activeMinigame.id === 'mg12_futebol_botao') {
+    const st = state.mgState;
+    if (st && st.metrics && st.buttons && st.ball) {
+      const m = st.metrics;
+      net.send({
+        type: 'sync_mg12',
+        turn: st.turn,
+        phase: st.phase,
+        scoreP1: st.scoreP1,
+        scoreP2: st.scoreP2,
+        goalBanner: st.goalBanner,
+        goalColor: st.goalColor,
+        buttons: st.buttons.map((b) => ({
+          id: b.id,
+          rx: (b.x - m.fx) / (m.fw || 1),
+          ry: (b.y - m.fy) / (m.fh || 1)
+        })),
+        ball: {
+          rx: (st.ball.x - m.fx) / (m.fw || 1),
+          ry: (st.ball.y - m.fy) / (m.fh || 1)
+        }
+      });
+    }
   }
 }
 
@@ -6395,8 +9793,10 @@ net.onData = (data) => {
         p1.scrollX = data.scrollX;
         p1.altarSpawned = data.altarSpawned;
         p1.altarX = data.altarX;
+        p1.turboTimer = data.turboTimer || 0;
         p1.p1 = data.p1;
         p1.p2 = data.p2;
+        p1.powerups = data.powerups || [];
         p1.obstacles = (data.obstacles || []).map((o) => ({
           lane: o.lane,
           x: o.x,
@@ -6421,8 +9821,12 @@ net.onData = (data) => {
       if (state.mode === 'guest' && state.screen === 'phase2') {
         const p2 = state.phase2;
         p2.timeLeft = data.timeLeft;
+        if (typeof data.cakeHp === 'number') p2.cakeHp = data.cakeHp;
+        if (typeof data.cakeShakeTimer === 'number') p2.cakeShakeTimer = data.cakeShakeTimer;
         p2.p1Angle = data.p1Angle;
         p2.p2Angle = data.p2Angle;
+        p2.waiter = data.waiter || null;
+        p2.collectibles = data.collectibles || [];
         p2.enemies = (data.enemies || []).map((e) => {
           const tpl = PHASE2_ENEMY_TYPES.find((t) => t.id === e.typeId) || PHASE2_ENEMY_TYPES[0];
           return {
@@ -6435,6 +9839,32 @@ net.onData = (data) => {
         });
         p2.projectiles = data.projectiles || [];
         hudTimerText.textContent = `${p2.timeLeft.toFixed(1)}s`;
+      }
+      break;
+
+    case 'sync_mg12':
+      if (state.mode === 'guest' && progression.activeMinigame && progression.activeMinigame.id === 'mg12_futebol_botao') {
+        const st = state.mgState;
+        if (st && st.metrics && st.buttons && st.ball) {
+          const m = st.metrics;
+          st.turn = data.turn;
+          st.phase = data.phase;
+          st.scoreP1 = data.scoreP1;
+          st.scoreP2 = data.scoreP2;
+          st.goalBanner = data.goalBanner;
+          st.goalColor = data.goalColor;
+          (data.buttons || []).forEach((rb) => {
+            const lb = st.buttons.find((b) => b.id === rb.id);
+            if (lb) {
+              lb.x = m.fx + rb.rx * m.fw;
+              lb.y = m.fy + rb.ry * m.fh;
+            }
+          });
+          if (data.ball) {
+            st.ball.x = m.fx + data.ball.rx * m.fw;
+            st.ball.y = m.fy + data.ball.ry * m.fh;
+          }
+        }
       }
       break;
 
@@ -6476,7 +9906,7 @@ net.onData = (data) => {
 
     case 'mg_pointer_down':
       if (progression.activeMinigame && progression.activeMinigame.onPointerDown) {
-        progression.activeMinigame.onPointerDown(data.x, data.y, ctxApi);
+        progression.activeMinigame.onPointerDown(data.x, data.y, ctxApi, true);
       }
       break;
 
@@ -6820,12 +10250,68 @@ function renderPhase1() {
     drawChurchAltar(p1.altarX, getPhase1LaneY(0), getPhase1LaneY(1));
   }
 
+  // Desenha Power-ups na Pista (Café Turbo, Escudo de Aliança, Buquê)
+  if (p1.powerups) {
+    p1.powerups.forEach((pu) => {
+      const laneY = getPhase1LaneY(pu.lane);
+      const py = laneY + pu.y - 18 + Math.sin(state.time * 6 + pu.x * 0.05) * 4;
+      ctx.save();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = pu.type.color;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.beginPath();
+      ctx.arc(pu.x, py, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = pu.type.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.font = '20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pu.type.emoji, pu.x, py);
+
+      ctx.font = '700 10px Fredoka, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(pu.type.name, pu.x, py - 24);
+      ctx.restore();
+    });
+  }
+
   // Desenha Noivo (Pista 0) e Noiva (Pista 1)
   const playerX = getPhase1PlayerX();
   drawGroomCharacter(playerX, getPhase1LaneY(0) + p1.p1.y, p1.p1.runCycle, 1, true, p1.p1.ducking);
   drawBrideCharacter(playerX, getPhase1LaneY(1) + p1.p2.y, p1.p2.runCycle, 1, true, p1.p2.ducking);
 
-  // Desenha Obstáculos por cima para que as placas de texto fiquem 100% visíveis e legíveis
+  // Escudo Sagrado ativo nos corredores
+  [p1.p1, p1.p2].forEach((actor, lane) => {
+    if (actor.hasShield) {
+      const gy = getPhase1LaneY(lane) + actor.y - 25;
+      ctx.save();
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3.5;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(playerX + 18, gy, 28, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = '16px sans-serif';
+      ctx.fillText('💍', playerX + 18, gy - 32);
+      ctx.restore();
+    }
+  });
+
+  // Rastro de Fogo do Café Turbo
+  if (p1.turboTimer > 0) {
+    ctx.save();
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 13px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡ CAFÉ TURBO ATIVO! (+40% VELOCIDADE) ⚡', state.width / 2, 88);
+    ctx.restore();
+  }
+
+  // Desenha Obstáculos por cima
   p1.obstacles.forEach((obs) => {
     const laneY = getPhase1LaneY(obs.lane);
     drawPhase1Obstacle(obs, laneY);
@@ -6993,8 +10479,75 @@ function renderPhase2() {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // Desenha Docinhos Coletáveis (Brigadeiros e Champanhe)
+  if (p2.collectibles) {
+    p2.collectibles.forEach((c) => {
+      ctx.save();
+      const pulse = 1 + Math.sin(state.time * 7) * 0.12;
+      ctx.translate(c.x, c.y);
+      ctx.scale(pulse, pulse);
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = c.type.color;
+      ctx.fillText(c.type.emoji, 0, 0);
+      ctx.restore();
+    });
+  }
+
+  // Desenha Garçom elegante com bandeja de coxinhas se ativo
+  if (p2.waiter) {
+    ctx.save();
+    ctx.translate(p2.waiter.x, p2.waiter.y);
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🧑‍🍳', 0, 0);
+    ctx.fillText('🥟', 20, -10);
+
+    ctx.fillStyle = 'rgba(10, 4, 24, 0.85)';
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-50, -36, 100, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 10px Fredoka, sans-serif';
+    ctx.fillText('COXINHAS!', 0, -23);
+    ctx.restore();
+  }
+
+  // Tremor no bolo se levou mordida
+  const shakeX = p2.cakeShakeTimer > 0 ? (Math.random() - 0.5) * 8 : 0;
+  const shakeY = p2.cakeShakeTimer > 0 ? (Math.random() - 0.5) * 8 : 0;
+
   // Desenha o Bolo de Casamento Gigante de 3 Andares no Centro
-  drawWeddingCake(cx, cy, p2.cakeRadius);
+  drawWeddingCake(cx + shakeX, cy + shakeY, p2.cakeRadius);
+
+  // Barra de Integridade do Bolo de Casamento
+  const cakeHp = p2.cakeHp !== undefined ? p2.cakeHp : 100;
+  const barW = 140;
+  const barH = 14;
+  const barX = cx - barW / 2;
+  const barY = cy - p2.cakeRadius - 32;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = cakeHp > 50 ? '#10b981' : cakeHp > 25 ? '#f59e0b' : '#ef4444';
+  ctx.fillRect(barX, barY, Math.max(0, (barW * cakeHp) / 100), barH);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 9px Fredoka, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`🎂 GLACÊ: ${Math.round(cakeHp)}%`, cx, barY + 10);
+  ctx.restore();
 
   // Desenha Escudos / Arcos de Proteção e os Noivos Orbitando
   drawOrbitalDefender(cx, cy, p2.orbitRadius, p2.p1Angle, true);
@@ -7229,8 +10782,10 @@ function renderMenuBackground() {
 
 let lastTime = performance.now();
 
+let rafId = null;
+
 function gameLoop(now) {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
   lastTime = now;
   state.time += dt;
 
@@ -7243,8 +10798,9 @@ function gameLoop(now) {
     } else if (state.screen === 'phase2') {
       updatePhase2(dt);
       broadcastHostState(dt);
-    } else if (activeMg && activeMg.onUpdate) {
+    } else if (activeMg && activeMg.onUpdate && state.screen === activeMg.id) {
       activeMg.onUpdate(dt, ctxApi);
+      broadcastHostState(dt);
     }
   }
 
@@ -7260,10 +10816,19 @@ function gameLoop(now) {
 
   renderParticlesAndOverlays(dt);
 
-  requestAnimationFrame(gameLoop);
+  rafId = requestAnimationFrame(gameLoop);
 }
 
-requestAnimationFrame(gameLoop);
+function startMainLoop() {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(gameLoop);
+}
+
+startMainLoop();
 
 // ============================================================================
 // BOTÕES DE UI E NAVEGAÇÃO
@@ -7274,13 +10839,13 @@ function returnToMenu() {
     clearInterval(transitionTimerId);
     transitionTimerId = null;
   }
-  progression.activeMinigame = null;
-  state.mgState = {};
+  cleanupActiveMinigame();
   net.disconnect();
   state.mode = 'local';
   state.screen = 'menu';
   state.freezeFrame = false;
   showOverlayScreen('menu');
+  startMainLoop();
 }
 
 // Botão: Abrir Hub de Minigames no Menu

@@ -11,6 +11,80 @@ const sfx = new SoundManager();
 const net = new NetworkManager();
 const progression = new MinigameProgression();
 
+// ============================================================================
+// PRÉ-CARREGAMENTO SEGURO DAS FOTOS REAIS DO CASAL (COM FALLBACK CARTOON)
+// ============================================================================
+const couplePhotos = {
+  groom: { img: new Image(), loaded: false, error: false, src: 'noivo.png' },
+  bride: { img: new Image(), loaded: false, error: false, src: 'noiva.png' }
+};
+
+function preloadCouplePhotos() {
+  ['groom', 'bride'].forEach((key) => {
+    const entry = couplePhotos[key];
+    entry.img.onload = () => {
+      if (entry.img.naturalWidth > 0 && entry.img.naturalHeight > 0) {
+        entry.loaded = true;
+        entry.error = false;
+      }
+    };
+    entry.img.onerror = () => {
+      entry.error = true;
+      entry.loaded = false;
+    };
+    entry.img.src = entry.src;
+  });
+}
+preloadCouplePhotos();
+
+function drawCoupleAvatar(targetCtx, who, cx, cy, r, borderColor = null) {
+  const isGroom = who === 'groom' || who === 'p1';
+  const entry = isGroom ? couplePhotos.groom : couplePhotos.bride;
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  targetCtx.clip();
+
+  if (entry && entry.loaded && !entry.error && entry.img.naturalWidth > 0) {
+    const iw = entry.img.naturalWidth;
+    const ih = entry.img.naturalHeight;
+    const scale = Math.max((r * 2) / iw, (r * 2) / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = cx - dw / 2;
+    // Leve viés superior para centralizar o rosto em retratos verticais
+    const dy = cy - dh * 0.42;
+    targetCtx.drawImage(entry.img, dx, dy, dw, dh);
+  } else {
+    // Fallback cartoon nítido caso a foto não carregue
+    targetCtx.fillStyle = isGroom ? '#1e3a8a' : '#9d174d';
+    targetCtx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    targetCtx.font = `${Math.max(12, Math.floor(r * 1.15))}px sans-serif`;
+    targetCtx.textAlign = 'center';
+    targetCtx.textBaseline = 'middle';
+    targetCtx.fillText(isGroom ? '🤵' : '👰', cx, cy + 1);
+  }
+  targetCtx.restore();
+
+  if (borderColor) {
+    targetCtx.save();
+    targetCtx.beginPath();
+    targetCtx.arc(cx, cy, r, 0, Math.PI * 2);
+    targetCtx.strokeStyle = borderColor;
+    targetCtx.lineWidth = Math.max(2, r * 0.14);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+}
+
+function resetAllKeys() {
+  Object.keys(state.keys).forEach((k) => {
+    state.keys[k] = false;
+  });
+}
+window.addEventListener('blur', resetAllKeys);
+
 // Referências DOM
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
@@ -144,6 +218,32 @@ const PHASE1_OBSTACLE_TYPES = [
     w: 68,
     h: 52,
     quote: 'O drone do fotógrafo enroscou no cabelo antes do altar!'
+  },
+  {
+    id: 'fotografo',
+    placement: 'low',
+    actionText: '⬆️ PULE!',
+    label: 'FOTÓGRAFO APRESSADO',
+    sub: 'Flash na Cara!',
+    emoji: '📸',
+    color: '#0284c7',
+    accent: '#bae6fd',
+    w: 64,
+    h: 56,
+    quote: 'O fotógrafo se jogou na frente do casal para tirar foto!'
+  },
+  {
+    id: 'convite',
+    placement: 'high',
+    actionText: '⬇️ ABAIXE!',
+    label: 'PERGUNTA: "E A CASA?"',
+    sub: 'Fofoca no Ar!',
+    emoji: '💬',
+    color: '#d97706',
+    accent: '#fef3c7',
+    w: 68,
+    h: 54,
+    quote: 'Não abaixou a tempo e levou a pergunta "Já compraram a casa?" na cabeça!'
   }
 ];
 
@@ -248,7 +348,10 @@ const state = {
       duckTimer: 0,
       runCycle: 0
     },
-    obstacles: []
+    obstacles: [],
+    powerups: [],
+    powerupTimer: 3.5,
+    turboTimer: 0
   },
 
   // Dados da Fase 2 (Defesa do Bolo)
@@ -265,7 +368,14 @@ const state = {
     spawnTimer: 1.0,
     waveCount: 0,
     enemies: [],
-    projectiles: []
+    projectiles: [],
+    cakeHp: 100,
+    maxCakeHp: 100,
+    cakeShakeTimer: 0,
+    collectibles: [],
+    collectibleTimer: 3.5,
+    waiter: null,
+    waiterTimer: 14.0
   },
 
   // Efeitos visuais
@@ -445,7 +555,11 @@ const ctxApi = {
   getViewport: () => ({ width: state.width, height: state.height }),
   getKeys: () => state.keys,
   getNames: () => ({ groom: state.groomName, bride: state.brideName }),
+  getMode: () => state.mode,
   getTime: () => state.time,
+  getCouplePhotos: () => couplePhotos,
+  drawCoupleAvatar: (targetCtx, who, cx, cy, r, borderColor) =>
+    drawCoupleAvatar(targetCtx, who, cx, cy, r, borderColor),
   sfx,
   particles: (x, y, color, count, spd) => spawnParticles(x, y, color, count, spd),
   floatingText: (x, y, text, color) => spawnFloatingText(x, y, text, color),
@@ -465,7 +579,17 @@ const ctxApi = {
   }
 };
 
+function cleanupActiveMinigame() {
+  if (progression.activeMinigame && progression.activeMinigame.onExit) {
+    try { progression.activeMinigame.onExit(ctxApi); } catch (_) {}
+  }
+  progression.activeMinigame = null;
+  state.mgState = {};
+  resetAllKeys();
+}
+
 function openMinigamesHub() {
+  cleanupActiveMinigame();
   syncCoupleNamesFromInputs();
   state.screen = 'minigames';
   renderMinigamesGrid();
@@ -507,12 +631,11 @@ function renderMinigamesGrid() {
 }
 
 function startStageById(stageId, fromNetwork = false) {
+  cleanupActiveMinigame();
   const stage = progression.getStageById(stageId);
   if (stage.id === 'phase1') {
-    progression.activeMinigame = null;
     startPhase1(fromNetwork);
   } else if (stage.id === 'phase2') {
-    progression.activeMinigame = null;
     startPhase2(fromNetwork);
   } else {
     const mg = progression.getMinigameModule(stageId);
@@ -548,7 +671,11 @@ function startStageById(stageId, fromNetwork = false) {
 }
 
 function startPhase1(isResetFromNetwork = false) {
-  progression.activeMinigame = null;
+  cleanupActiveMinigame();
+  if (transitionTimerId) {
+    clearInterval(transitionTimerId);
+    transitionTimerId = null;
+  }
   syncCoupleNamesFromInputs();
   progression.unlockStage('phase1');
   state.screen = 'phase1';
@@ -564,9 +691,12 @@ function startPhase1(isResetFromNetwork = false) {
   p1.spawnTimer = 1.3;
   p1.altarSpawned = false;
   p1.altarX = state.width + 400;
-  p1.p1 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0 };
-  p1.p2 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0 };
+  p1.p1 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0, hasShield: false };
+  p1.p2 = { y: 0, vy: 0, jumping: false, ducking: false, duckHold: false, duckTimer: 0, runCycle: 0, hasShield: false };
   p1.obstacles = [];
+  p1.powerups = [];
+  p1.powerupTimer = 3.2;
+  p1.turboTimer = 0;
 
   hudPhaseBadge.textContent = 'FASE 1: CORRIDA AO ALTAR';
   hudModeBadge.textContent = state.mode === 'local' ? 'LOCAL' : `SALA: ${net.roomCode}`;
@@ -651,6 +781,13 @@ function startPhase2(fromNetwork = false) {
   p2.waveCount = 0;
   p2.enemies = [];
   p2.projectiles = [];
+  p2.cakeHp = 100;
+  p2.maxCakeHp = 100;
+  p2.cakeShakeTimer = 0;
+  p2.collectibles = [];
+  p2.collectibleTimer = 3.5;
+  p2.waiter = null;
+  p2.waiterTimer = 14.0;
 
   hudPhaseBadge.textContent = 'FASE 2: DEFESA DO BOLO';
   hudProgressContainer.classList.add('hidden');
@@ -667,12 +804,13 @@ function startPhase2(fromNetwork = false) {
 }
 
 function triggerBatatinha(customReason, phaseNum, culpritInfo = null, fromNetwork = false) {
-  if (state.screen === 'batatinha') return;
+  if (state.screen === 'batatinha' || state.screen === 'victory') return;
 
   if (transitionTimerId) {
     clearInterval(transitionTimerId);
     transitionTimerId = null;
   }
+  resetAllKeys();
 
   state.screen = 'batatinha';
   state.failedPhase = phaseNum;
@@ -732,7 +870,8 @@ function triggerBatatinha(customReason, phaseNum, culpritInfo = null, fromNetwor
 function triggerVictory(fromNetwork = false) {
   if (state.screen === 'victory') return;
   state.screen = 'victory';
-  state.freezeFrame = false;
+  state.freezeFrame = true;
+  resetAllKeys();
 
   const victoryTitle = document.querySelector('.victory-title');
   const victoryCoupleNames = document.getElementById('victory-couple-names');
@@ -767,7 +906,8 @@ function triggerMinigameVictory(message, fromNetwork = false) {
   }
 
   state.screen = 'victory';
-  state.freezeFrame = false;
+  state.freezeFrame = true;
+  resetAllKeys();
 
   const victoryTitle = document.querySelector('.victory-title');
   const victoryCoupleNames = document.getElementById('victory-couple-names');
@@ -1102,7 +1242,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
 });
 
-window.addEventListener('pointerup', () => {
+const handleCanvasPointerRelease = () => {
   if (!progression.activeMinigame) return;
   if (progression.activeMinigame.onPointerUp) {
     progression.activeMinigame.onPointerUp(ctxApi);
@@ -1110,7 +1250,10 @@ window.addEventListener('pointerup', () => {
   if (state.mode === 'guest' || state.mode === 'host') {
     net.send({ type: 'mg_pointer_up' });
   }
-});
+};
+
+window.addEventListener('pointerup', handleCanvasPointerRelease);
+window.addEventListener('pointercancel', handleCanvasPointerRelease);
 
 canvas.addEventListener('wheel', (e) => {
   if (!progression.activeMinigame) return;
@@ -1270,7 +1413,12 @@ function updatePhase1(dt) {
   // Se for Guest no modo Online, apenas interpola visualmente o estado vindo do Host
   if (state.mode === 'guest') return;
 
-  const speed = p1.speed + p1.progress * 1.4;
+  if (!p1.powerups) p1.powerups = [];
+  if (p1.turboTimer > 0) p1.turboTimer -= dt;
+
+  let speed = p1.speed + p1.progress * 1.4;
+  if (p1.turboTimer > 0) speed *= 1.40;
+
   p1.scrollX += speed * dt;
   p1.progress = Math.min(100, p1.progress + (100 / p1.duration) * dt);
 
@@ -1297,6 +1445,57 @@ function updatePhase1(dt) {
   if (p1.spawnTimer <= 0) {
     spawnPhase1Obstacle();
     p1.spawnTimer = Math.max(1.05, 1.75 - (p1.progress / 100) * 0.55);
+  }
+
+  // Spawna Power-ups periódicos (Café Turbo, Escudo de Aliança, Buquê da Sorte)
+  p1.powerupTimer = (p1.powerupTimer || 3.5) - dt;
+  if (p1.powerupTimer <= 0 && p1.progress < 90) {
+    p1.powerupTimer = 4.0 + Math.random() * 2.8;
+    const pTypes = [
+      { id: 'coffee', emoji: '☕', name: 'CAFÉ TURBO', color: '#f59e0b' },
+      { id: 'shield', emoji: '💍', name: 'ESCUDO SAGRADO', color: '#ffd166' },
+      { id: 'bouquet', emoji: '💐', name: 'BUQUÊ DA SORTE', color: '#ec4899' }
+    ];
+    const pType = pTypes[Math.floor(Math.random() * pTypes.length)];
+    const pLane = Math.random() < 0.5 ? 0 : 1;
+    const isHigh = Math.random() < 0.35;
+    p1.powerups.push({
+      lane: pLane,
+      x: state.width + 60,
+      y: isHigh ? -36 : 0,
+      type: pType
+    });
+  }
+
+  // Atualiza e coleta Power-ups
+  const pX = getPhase1PlayerX();
+  for (let i = p1.powerups.length - 1; i >= 0; i--) {
+    const pu = p1.powerups[i];
+    pu.x -= speed * dt;
+    const actor = pu.lane === 0 ? p1.p1 : p1.p2;
+    const laneGroundY = getPhase1LaneY(pu.lane);
+    const actorCenterY = laneGroundY + actor.y - 25;
+    const puCenterY = laneGroundY + pu.y - 18;
+
+    if (Math.abs(pu.x - pX) < 32 && Math.abs(actorCenterY - puCenterY) < 38) {
+      if (pu.type.id === 'coffee') {
+        p1.turboTimer = 5.0;
+        spawnFloatingText(pX, laneGroundY - 60, '☕ CAFÉ TURBO +40%!', '#f59e0b');
+        sfx.playAltarFanfare();
+      } else if (pu.type.id === 'shield') {
+        actor.hasShield = true;
+        spawnFloatingText(pX, laneGroundY - 60, '💍 ESCUDO DE ALIANÇA!', '#ffd166');
+        sfx.playBounce();
+      } else if (pu.type.id === 'bouquet') {
+        p1.progress = Math.min(92, p1.progress + 8);
+        spawnFloatingText(pX, laneGroundY - 60, '💐 BUQUÊ DA SORTE +8%!', '#ec4899');
+        spawnConfettiBurst(25);
+        sfx.playAltarFanfare();
+      }
+      p1.powerups.splice(i, 1);
+      continue;
+    }
+    if (pu.x < -60) p1.powerups.splice(i, 1);
   }
 
   const playerX = getPhase1PlayerX();
@@ -1331,6 +1530,14 @@ function updatePhase1(dt) {
     }
 
     if (collided) {
+      if (actor.hasShield) {
+        actor.hasShield = false;
+        obs.x = -999;
+        spawnParticles(playerX + 20, laneGroundY - obs.h / 2, '#ffd166', 22, 240);
+        sfx.playBounce();
+        spawnFloatingText(playerX, laneGroundY - 65, '💍 ESCUDO SALVOU DO BOLETO!', '#ffd166');
+        continue;
+      }
       const victimName = obs.lane === 0 ? state.groomName : state.brideName;
       const highlightY = isHigh ? laneGroundY - 38 - obs.h / 2 : laneGroundY - obs.h / 2;
       triggerBatatinha(
@@ -1384,6 +1591,9 @@ function spawnPhase2Enemy() {
 
 function updatePhase2(dt) {
   const p2 = state.phase2;
+  const minDim = Math.min(state.width, state.height - 60);
+  p2.cakeRadius = Math.max(40, Math.min(58, minDim * 0.11));
+  p2.orbitRadius = p2.cakeRadius + Math.max(42, Math.min(64, minDim * 0.12));
   const angularSpeed = 3.2; // rad/s
 
   // Movimentação orbital do Jogador 1 (Noivo: A / D)
@@ -1399,6 +1609,9 @@ function updatePhase2(dt) {
   p2.p2Angle += p2Dir * angularSpeed * dt;
 
   if (state.mode === 'guest') return;
+
+  if (p2.cakeShakeTimer > 0) p2.cakeShakeTimer -= dt;
+  if (!p2.collectibles) p2.collectibles = [];
 
   // Atualiza cronômetro regressivo de 45s
   p2.timeLeft = Math.max(0, p2.timeLeft - dt);
@@ -1457,6 +1670,46 @@ function updatePhase2(dt) {
     }
   }
 
+  // Spawna Docinhos Coletáveis (Brigadeiros e Champanhe)
+  p2.collectibleTimer = (p2.collectibleTimer || 3.5) - dt;
+  if (p2.collectibleTimer <= 0) {
+    p2.collectibleTimer = 4.2 + Math.random() * 2.8;
+    const cTypes = [
+      { id: 'cupcake', emoji: '🧁', name: 'BRIGADEIRO', color: '#ec4899' },
+      { id: 'champagne', emoji: '🍾', name: 'CHAMPANHE', color: '#f59e0b' }
+    ];
+    const cType = cTypes[Math.random() < 0.65 ? 0 : 1];
+    const colAngle = Math.random() * Math.PI * 2;
+    p2.collectibles.push({
+      x: cx + Math.cos(colAngle) * p2.orbitRadius,
+      y: cy + Math.sin(colAngle) * p2.orbitRadius,
+      type: cType,
+      life: 8.0
+    });
+  }
+
+  // Evento Especial do Garçom com Coxinhas (Distração em Massa)
+  p2.waiterTimer = (p2.waiterTimer || 14.0) - dt;
+  if (p2.waiterTimer <= 0 && !p2.waiter) {
+    p2.waiterTimer = 16.0;
+    p2.waiter = {
+      x: -40,
+      y: cy - 130,
+      vx: 65,
+      timer: 6.0,
+      active: true
+    };
+    spawnFloatingText(cx, cy - 85, '🧑‍🍳 GARÇOM: SAINDO COXINHAS QUENTINHAS! 🥟', '#ffd166');
+    sfx.playAltarFanfare();
+  }
+  if (p2.waiter) {
+    p2.waiter.x += p2.waiter.vx * dt;
+    p2.waiter.timer -= dt;
+    if (p2.waiter.timer <= 0 || p2.waiter.x > state.width + 60) {
+      p2.waiter = null;
+    }
+  }
+
   // Spawna ondas de convidados famintos
   p2.spawnTimer -= dt;
   if (p2.spawnTimer <= 0) {
@@ -1472,6 +1725,38 @@ function updatePhase2(dt) {
   const p2Y = cy + Math.sin(p2.p2Angle) * p2.orbitRadius;
   const defenderHitRadius = 38;
 
+  // Jogadores coletam Brigadeiros e Champanhe na órbita
+  for (let c = p2.collectibles.length - 1; c >= 0; c--) {
+    const col = p2.collectibles[c];
+    col.life -= dt;
+    if (col.life <= 0) { p2.collectibles.splice(c, 1); continue; }
+
+    const distP1 = Math.hypot(col.x - p1X, col.y - p1Y);
+    const distP2 = Math.hypot(col.x - p2X, col.y - p2Y);
+    if (distP1 < 36 || distP2 < 36) {
+      if (col.type.id === 'cupcake') {
+        p2.cakeHp = Math.min(100, (p2.cakeHp || 100) + 25);
+        sfx.playBounce();
+        spawnParticles(col.x, col.y, '#ec4899', 16, 180);
+        spawnFloatingText(col.x, col.y - 20, '🧁 REPAROU O BOLO +25%!', '#06d6a0');
+      } else if (col.type.id === 'champagne') {
+        sfx.playAltarFanfare();
+        spawnParticles(cx, cy, '#ffd166', 35, 320);
+        spawnFloatingText(cx, cy - 60, '🍾 ONDA DE CHOQUE DE ESPUMA!', '#ffd166');
+        p2.enemies.forEach((e) => {
+          const ddx = e.x - cx;
+          const ddy = e.y - cy;
+          const dist = Math.hypot(ddx, ddy) || 1;
+          e.bounced = true;
+          e.vx = (ddx / dist) * 450;
+          e.vy = (ddy / dist) * 450;
+          e.life = 0.55;
+        });
+      }
+      p2.collectibles.splice(c, 1);
+    }
+  }
+
   for (let i = p2.enemies.length - 1; i >= 0; i--) {
     const en = p2.enemies[i];
 
@@ -1483,12 +1768,19 @@ function updatePhase2(dt) {
       continue;
     }
 
-    // Move em direção ao centro do Bolo de Casamento
-    const dx = cx - en.x;
-    const dy = cy - en.y;
-    const distToCenter = Math.hypot(dx, dy) || 1;
-    const dirX = dx / distToCenter;
-    const dirY = dy / distToCenter;
+    // Se o garçom estiver passando com coxinhas, convidados são atraídos por ele!
+    let targetX = cx;
+    let targetY = cy;
+    if (p2.waiter && p2.waiter.active) {
+      targetX = p2.waiter.x;
+      targetY = p2.waiter.y;
+    }
+    const dx = targetX - en.x;
+    const dy = targetY - en.y;
+    const distToCenter = Math.hypot(cx - en.x, cy - en.y) || 1;
+    const distToTarget = Math.hypot(dx, dy) || 1;
+    const dirX = dx / distToTarget;
+    const dirY = dy / distToTarget;
 
     en.wobblePhase += dt * 6;
     const perpX = -dirY * Math.sin(en.wobblePhase) * (en.type.wobble || 0.8) * 14;
@@ -1541,14 +1833,27 @@ function updatePhase2(dt) {
       continue;
     }
 
-    // 3. Checa se encostou no Bolo de Casamento -> BATATINHA!
+    // 3. Checa se encostou no Bolo de Casamento -> Dano no Glacê ou Batatinha!
     if (distToCenter < p2.cakeRadius + en.radius - 6) {
-      triggerBatatinha(
-        en.type.quote,
-        2,
-        { x: en.x, y: en.y, r: 42, label: en.type.name }
-      );
-      return;
+      p2.cakeHp = Math.max(0, (p2.cakeHp || 100) - 34);
+      p2.cakeShakeTimer = 0.45;
+      en.bounced = true;
+      en.vx = -(cx - en.x) / distToCenter * 350;
+      en.vy = -(cy - en.y) / distToCenter * 350;
+      en.life = 0.45;
+      sfx.playBounce();
+      spawnParticles(cx, cy, '#ff3355', 20, 200);
+      spawnFloatingText(cx, cy - 35, '🍰 MORDIDA NO GLACÊ! -34%', '#ef4444');
+
+      if (p2.cakeHp <= 0) {
+        triggerBatatinha(
+          en.type.quote,
+          2,
+          { x: en.x, y: en.y, r: 42, label: en.type.name }
+        );
+        return;
+      }
+      continue;
     }
   }
 }
@@ -1573,8 +1878,15 @@ function broadcastHostState(dt) {
       scrollX: p1.scrollX,
       altarSpawned: p1.altarSpawned,
       altarX: p1.altarX,
+      turboTimer: p1.turboTimer || 0,
       p1: p1.p1,
       p2: p1.p2,
+      powerups: (p1.powerups || []).map((pu) => ({
+        lane: pu.lane,
+        x: pu.x,
+        y: pu.y,
+        type: pu.type
+      })),
       obstacles: p1.obstacles.map((o) => ({
         lane: o.lane,
         x: o.x,
@@ -1588,8 +1900,16 @@ function broadcastHostState(dt) {
     net.send({
       type: 'sync_phase2',
       timeLeft: p2.timeLeft,
+      cakeHp: p2.cakeHp,
+      cakeShakeTimer: p2.cakeShakeTimer,
       p1Angle: p2.p1Angle,
       p2Angle: p2.p2Angle,
+      waiter: p2.waiter,
+      collectibles: (p2.collectibles || []).map((c) => ({
+        x: c.x,
+        y: c.y,
+        type: c.type
+      })),
       enemies: p2.enemies.map((e) => ({
         x: e.x,
         y: e.y,
@@ -1602,6 +1922,29 @@ function broadcastHostState(dt) {
         emoji: pr.emoji
       }))
     });
+  } else if (progression.activeMinigame && progression.activeMinigame.id === 'mg12_futebol_botao') {
+    const st = state.mgState;
+    if (st && st.metrics && st.buttons && st.ball) {
+      const m = st.metrics;
+      net.send({
+        type: 'sync_mg12',
+        turn: st.turn,
+        phase: st.phase,
+        scoreP1: st.scoreP1,
+        scoreP2: st.scoreP2,
+        goalBanner: st.goalBanner,
+        goalColor: st.goalColor,
+        buttons: st.buttons.map((b) => ({
+          id: b.id,
+          rx: (b.x - m.fx) / (m.fw || 1),
+          ry: (b.y - m.fy) / (m.fh || 1)
+        })),
+        ball: {
+          rx: (st.ball.x - m.fx) / (m.fw || 1),
+          ry: (st.ball.y - m.fy) / (m.fh || 1)
+        }
+      });
+    }
   }
 }
 
@@ -1656,8 +1999,10 @@ net.onData = (data) => {
         p1.scrollX = data.scrollX;
         p1.altarSpawned = data.altarSpawned;
         p1.altarX = data.altarX;
+        p1.turboTimer = data.turboTimer || 0;
         p1.p1 = data.p1;
         p1.p2 = data.p2;
+        p1.powerups = data.powerups || [];
         p1.obstacles = (data.obstacles || []).map((o) => ({
           lane: o.lane,
           x: o.x,
@@ -1682,8 +2027,12 @@ net.onData = (data) => {
       if (state.mode === 'guest' && state.screen === 'phase2') {
         const p2 = state.phase2;
         p2.timeLeft = data.timeLeft;
+        if (typeof data.cakeHp === 'number') p2.cakeHp = data.cakeHp;
+        if (typeof data.cakeShakeTimer === 'number') p2.cakeShakeTimer = data.cakeShakeTimer;
         p2.p1Angle = data.p1Angle;
         p2.p2Angle = data.p2Angle;
+        p2.waiter = data.waiter || null;
+        p2.collectibles = data.collectibles || [];
         p2.enemies = (data.enemies || []).map((e) => {
           const tpl = PHASE2_ENEMY_TYPES.find((t) => t.id === e.typeId) || PHASE2_ENEMY_TYPES[0];
           return {
@@ -1696,6 +2045,32 @@ net.onData = (data) => {
         });
         p2.projectiles = data.projectiles || [];
         hudTimerText.textContent = `${p2.timeLeft.toFixed(1)}s`;
+      }
+      break;
+
+    case 'sync_mg12':
+      if (state.mode === 'guest' && progression.activeMinigame && progression.activeMinigame.id === 'mg12_futebol_botao') {
+        const st = state.mgState;
+        if (st && st.metrics && st.buttons && st.ball) {
+          const m = st.metrics;
+          st.turn = data.turn;
+          st.phase = data.phase;
+          st.scoreP1 = data.scoreP1;
+          st.scoreP2 = data.scoreP2;
+          st.goalBanner = data.goalBanner;
+          st.goalColor = data.goalColor;
+          (data.buttons || []).forEach((rb) => {
+            const lb = st.buttons.find((b) => b.id === rb.id);
+            if (lb) {
+              lb.x = m.fx + rb.rx * m.fw;
+              lb.y = m.fy + rb.ry * m.fh;
+            }
+          });
+          if (data.ball) {
+            st.ball.x = m.fx + data.ball.rx * m.fw;
+            st.ball.y = m.fy + data.ball.ry * m.fh;
+          }
+        }
       }
       break;
 
@@ -1737,7 +2112,7 @@ net.onData = (data) => {
 
     case 'mg_pointer_down':
       if (progression.activeMinigame && progression.activeMinigame.onPointerDown) {
-        progression.activeMinigame.onPointerDown(data.x, data.y, ctxApi);
+        progression.activeMinigame.onPointerDown(data.x, data.y, ctxApi, true);
       }
       break;
 
@@ -2081,12 +2456,68 @@ function renderPhase1() {
     drawChurchAltar(p1.altarX, getPhase1LaneY(0), getPhase1LaneY(1));
   }
 
+  // Desenha Power-ups na Pista (Café Turbo, Escudo de Aliança, Buquê)
+  if (p1.powerups) {
+    p1.powerups.forEach((pu) => {
+      const laneY = getPhase1LaneY(pu.lane);
+      const py = laneY + pu.y - 18 + Math.sin(state.time * 6 + pu.x * 0.05) * 4;
+      ctx.save();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = pu.type.color;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.beginPath();
+      ctx.arc(pu.x, py, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = pu.type.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.font = '20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pu.type.emoji, pu.x, py);
+
+      ctx.font = '700 10px Fredoka, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(pu.type.name, pu.x, py - 24);
+      ctx.restore();
+    });
+  }
+
   // Desenha Noivo (Pista 0) e Noiva (Pista 1)
   const playerX = getPhase1PlayerX();
   drawGroomCharacter(playerX, getPhase1LaneY(0) + p1.p1.y, p1.p1.runCycle, 1, true, p1.p1.ducking);
   drawBrideCharacter(playerX, getPhase1LaneY(1) + p1.p2.y, p1.p2.runCycle, 1, true, p1.p2.ducking);
 
-  // Desenha Obstáculos por cima para que as placas de texto fiquem 100% visíveis e legíveis
+  // Escudo Sagrado ativo nos corredores
+  [p1.p1, p1.p2].forEach((actor, lane) => {
+    if (actor.hasShield) {
+      const gy = getPhase1LaneY(lane) + actor.y - 25;
+      ctx.save();
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 3.5;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(playerX + 18, gy, 28, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = '16px sans-serif';
+      ctx.fillText('💍', playerX + 18, gy - 32);
+      ctx.restore();
+    }
+  });
+
+  // Rastro de Fogo do Café Turbo
+  if (p1.turboTimer > 0) {
+    ctx.save();
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 13px Fredoka, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡ CAFÉ TURBO ATIVO! (+40% VELOCIDADE) ⚡', state.width / 2, 88);
+    ctx.restore();
+  }
+
+  // Desenha Obstáculos por cima
   p1.obstacles.forEach((obs) => {
     const laneY = getPhase1LaneY(obs.lane);
     drawPhase1Obstacle(obs, laneY);
@@ -2254,8 +2685,75 @@ function renderPhase2() {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // Desenha Docinhos Coletáveis (Brigadeiros e Champanhe)
+  if (p2.collectibles) {
+    p2.collectibles.forEach((c) => {
+      ctx.save();
+      const pulse = 1 + Math.sin(state.time * 7) * 0.12;
+      ctx.translate(c.x, c.y);
+      ctx.scale(pulse, pulse);
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = c.type.color;
+      ctx.fillText(c.type.emoji, 0, 0);
+      ctx.restore();
+    });
+  }
+
+  // Desenha Garçom elegante com bandeja de coxinhas se ativo
+  if (p2.waiter) {
+    ctx.save();
+    ctx.translate(p2.waiter.x, p2.waiter.y);
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🧑‍🍳', 0, 0);
+    ctx.fillText('🥟', 20, -10);
+
+    ctx.fillStyle = 'rgba(10, 4, 24, 0.85)';
+    ctx.strokeStyle = '#ffd166';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-50, -36, 100, 22, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = '700 10px Fredoka, sans-serif';
+    ctx.fillText('COXINHAS!', 0, -23);
+    ctx.restore();
+  }
+
+  // Tremor no bolo se levou mordida
+  const shakeX = p2.cakeShakeTimer > 0 ? (Math.random() - 0.5) * 8 : 0;
+  const shakeY = p2.cakeShakeTimer > 0 ? (Math.random() - 0.5) * 8 : 0;
+
   // Desenha o Bolo de Casamento Gigante de 3 Andares no Centro
-  drawWeddingCake(cx, cy, p2.cakeRadius);
+  drawWeddingCake(cx + shakeX, cy + shakeY, p2.cakeRadius);
+
+  // Barra de Integridade do Bolo de Casamento
+  const cakeHp = p2.cakeHp !== undefined ? p2.cakeHp : 100;
+  const barW = 140;
+  const barH = 14;
+  const barX = cx - barW / 2;
+  const barY = cy - p2.cakeRadius - 32;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = cakeHp > 50 ? '#10b981' : cakeHp > 25 ? '#f59e0b' : '#ef4444';
+  ctx.fillRect(barX, barY, Math.max(0, (barW * cakeHp) / 100), barH);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 9px Fredoka, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`🎂 GLACÊ: ${Math.round(cakeHp)}%`, cx, barY + 10);
+  ctx.restore();
 
   // Desenha Escudos / Arcos de Proteção e os Noivos Orbitando
   drawOrbitalDefender(cx, cy, p2.orbitRadius, p2.p1Angle, true);
@@ -2490,8 +2988,10 @@ function renderMenuBackground() {
 
 let lastTime = performance.now();
 
+let rafId = null;
+
 function gameLoop(now) {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
   lastTime = now;
   state.time += dt;
 
@@ -2504,8 +3004,9 @@ function gameLoop(now) {
     } else if (state.screen === 'phase2') {
       updatePhase2(dt);
       broadcastHostState(dt);
-    } else if (activeMg && activeMg.onUpdate) {
+    } else if (activeMg && activeMg.onUpdate && state.screen === activeMg.id) {
       activeMg.onUpdate(dt, ctxApi);
+      broadcastHostState(dt);
     }
   }
 
@@ -2521,10 +3022,19 @@ function gameLoop(now) {
 
   renderParticlesAndOverlays(dt);
 
-  requestAnimationFrame(gameLoop);
+  rafId = requestAnimationFrame(gameLoop);
 }
 
-requestAnimationFrame(gameLoop);
+function startMainLoop() {
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(gameLoop);
+}
+
+startMainLoop();
 
 // ============================================================================
 // BOTÕES DE UI E NAVEGAÇÃO
@@ -2535,13 +3045,13 @@ function returnToMenu() {
     clearInterval(transitionTimerId);
     transitionTimerId = null;
   }
-  progression.activeMinigame = null;
-  state.mgState = {};
+  cleanupActiveMinigame();
   net.disconnect();
   state.mode = 'local';
   state.screen = 'menu';
   state.freezeFrame = false;
   showOverlayScreen('menu');
+  startMainLoop();
 }
 
 // Botão: Abrir Hub de Minigames no Menu

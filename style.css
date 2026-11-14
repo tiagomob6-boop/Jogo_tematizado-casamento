@@ -953,9 +953,161 @@ kbd {
 }
 
 /* ==========================================
+   FOTOS REAIS EM CÍRCULO (CASAL, HUD, BATATINHA)
+=========================================== */
+#game-canvas,
+#touch-overlay {
+  touch-action: none;
+}
+
+button, .btn, .dpad-btn, .mg-item-btn, .icon-btn {
+  touch-action: manipulation;
+}
+
+.hud-couple-avatars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 2px;
+}
+
+.hud-avatar-circle,
+.hud-avatar-fallback {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 20%;
+  border: 2px solid var(--gold);
+  background: #23153c;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.hud-avatar-circle.avatar-groom {
+  border-color: var(--blue-groom);
+}
+
+.hud-avatar-circle.avatar-bride {
+  border-color: var(--pink);
+}
+
+.touch-avatar-img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 20%;
+  border: 2px solid #fff;
+  vertical-align: middle;
+}
+
+.couple-portraits-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 8px 0 12px;
+}
+
+.portrait-wrap {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  padding: 3px;
+  background: linear-gradient(135deg, var(--gold), #fff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.portrait-wrap.portrait-groom {
+  background: linear-gradient(135deg, var(--blue-groom), #93c5fd);
+}
+
+.portrait-wrap.portrait-bride {
+  background: linear-gradient(135deg, var(--pink), var(--gold));
+}
+
+.couple-portrait-circle,
+.couple-portrait-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 20%;
+  background: #1e1432;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.portrait-heart {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 2px 6px rgba(255, 93, 143, 0.6));
+}
+
+.batatinha-avatars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 4px;
+}
+
+.batatinha-avatar-wrap {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  padding: 3px;
+  background: var(--danger);
+  box-shadow: 0 0 14px rgba(255, 51, 85, 0.55);
+}
+
+.batatinha-avatar-wrap.avatar-groom {
+  background: linear-gradient(135deg, var(--blue-groom), var(--danger));
+}
+
+.batatinha-avatar-wrap.avatar-bride {
+  background: linear-gradient(135deg, var(--pink), var(--danger));
+}
+
+.batatinha-avatar-circle,
+.batatinha-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 20%;
+  background: #1e1432;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+}
+
+/* ==========================================
    RESPONSIVIDADE MOBILE
 =========================================== */
 @media (max-width: 700px) {
+  .hud-couple-avatars {
+    display: none;
+  }
+
+  .portrait-wrap {
+    width: 54px;
+    height: 54px;
+  }
+
+  .batatinha-avatar-wrap {
+    width: 48px;
+    height: 48px;
+  }
   .card {
     padding: 18px 16px;
   }

@@ -16,6 +16,10 @@
     <!-- Barra Superior / HUD -->
     <header id="hud-bar" class="hidden">
       <div class="hud-left">
+        <div class="hud-couple-avatars">
+          <img src="noivo.png" alt="Noivo" class="hud-avatar-circle avatar-groom" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';" /><span class="hud-avatar-fallback" style="display:none">🤵</span>
+          <img src="noiva.png" alt="Noiva" class="hud-avatar-circle avatar-bride" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';" /><span class="hud-avatar-fallback" style="display:none">👰</span>
+        </div>
         <span id="hud-phase-badge" class="badge">FASE 1</span>
         <span id="hud-mode-badge" class="badge badge-mode">LOCAL</span>
       </div>
@@ -56,7 +60,7 @@
         <!-- Metade Esquerda: Noivo -->
         <div id="touch-zone-left" class="touch-zone touch-left">
           <div class="touch-header">
-            <span class="touch-avatar">🤵</span>
+            <span class="touch-avatar"><img src="noivo.png" alt="Noivo" class="touch-avatar-img" onerror="this.style.display='none';this.parentElement.textContent='🤵';" /></span>
             <span id="touch-name-p1" class="touch-name">Joao Costenaro</span>
           </div>
           <!-- Controles Fase 1 (Pular / Abaixar) -->
@@ -75,7 +79,7 @@
         <!-- Metade Direita: Noiva -->
         <div id="touch-zone-right" class="touch-zone touch-right">
           <div class="touch-header">
-            <span class="touch-avatar">👰</span>
+            <span class="touch-avatar"><img src="noiva.png" alt="Noiva" class="touch-avatar-img" onerror="this.style.display='none';this.parentElement.textContent='👰';" /></span>
             <span id="touch-name-p2" class="touch-name">Noiva</span>
           </div>
           <!-- Controles Fase 1 (Pular / Abaixar) -->
@@ -100,6 +104,20 @@
       <div class="card menu-card">
         <div class="crown-badge">💍 EDIÇÃO ESPECIAL DE CASAMENTO 🎓</div>
         <h1 class="game-title">OPERAÇÃO<br/><span>LUA DE MEL</span></h1>
+
+        <!-- Retratos Reais do Casal em Círculo -->
+        <div class="couple-portraits-row">
+          <div class="portrait-wrap portrait-groom">
+            <img src="noivo.png" alt="Noivo" class="couple-portrait-circle" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+            <div class="couple-portrait-fallback" style="display:none">🤵</div>
+          </div>
+          <div class="portrait-heart">💖</div>
+          <div class="portrait-wrap portrait-bride">
+            <img src="noiva.png" alt="Noiva" class="couple-portrait-circle" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+            <div class="couple-portrait-fallback" style="display:none">👰</div>
+          </div>
+        </div>
+
         <p class="game-subtitle">
           "Porque na lua de mel vocês com certeza não têm nada melhor para fazer..."
         </p>
@@ -138,8 +156,8 @@
           <button id="btn-open-minigames-menu" class="btn btn-accent btn-large">
             <span class="btn-icon">🏝️</span>
             <div class="btn-text">
-              <strong>Menu de Minigames da Lua de Mel (11 Jogos!)</strong>
-              <small>Sinuca, Roguelite, Contra, Top Gear, Colar na Prova e mais!</small>
+              <strong>Menu de Minigames da Lua de Mel (12 Jogos!)</strong>
+              <small>Futebol de Botão, Sinuca, Roguelite, Contra, Top Gear e mais!</small>
             </div>
           </button>
         </div>
@@ -233,7 +251,17 @@
     =========================================== -->
     <section id="screen-batatinha" class="overlay-screen hidden">
       <div class="card batatinha-card">
-        <div class="potato-icon">🥔💥😱</div>
+        <div class="batatinha-avatars">
+          <div class="batatinha-avatar-wrap avatar-groom">
+            <img src="noivo.png" alt="Noivo" class="batatinha-avatar-circle" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+            <div class="batatinha-avatar-fallback" style="display:none">🤵</div>
+          </div>
+          <div class="potato-icon">🥔💥😱</div>
+          <div class="batatinha-avatar-wrap avatar-bride">
+            <img src="noiva.png" alt="Noiva" class="batatinha-avatar-circle" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+            <div class="batatinha-avatar-fallback" style="display:none">👰</div>
+          </div>
+        </div>
         <h1 class="batatinha-title">BATATINHA!</h1>
         <p id="batatinha-reason" class="batatinha-quote">
           "A pilha de provas venceu a lua de mel!"
@@ -282,7 +310,7 @@
 
         <div class="victory-actions">
           <button id="btn-open-minigames-victory" class="btn btn-accent btn-giant">
-            🏝️ Menu de Minigames (11 Jogos!)
+            🏝️ Menu de Minigames (12 Jogos!)
           </button>
           <button id="btn-play-again" class="btn btn-primary">
             🎮 Jogar Novamente
@@ -299,10 +327,10 @@
     =========================================== -->
     <section id="screen-minigames" class="overlay-screen hidden">
       <div class="card minigames-hub-card">
-        <div class="crown-badge">🏝️ ARCADE OFICIAL DO CASAL • 11 JOGOS 🕹️</div>
+        <div class="crown-badge">🏝️ ARCADE OFICIAL DO CASAL • 12 JOGOS 🕹️</div>
         <h2 class="hub-title">MINIGAMES DA LUA DE MEL</h2>
         <p class="hub-subtitle">
-          Escolham qualquer um dos 11 desafios cooperativos ou X1 (qualquer vacilo é <strong>BATATINHA!</strong>):
+          Escolham qualquer um dos 12 desafios cooperativos ou X1 (qualquer vacilo é <strong>BATATINHA!</strong>):
         </p>
 
         <div id="minigames-grid" class="minigames-grid">
