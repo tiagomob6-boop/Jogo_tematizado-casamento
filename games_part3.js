@@ -1323,7 +1323,7 @@ export const Minigame12_FutebolBotao = {
     for (const b of st.buttons) {
       if (b.team !== st.turn) continue;
       const d = Math.hypot(x - b.x, y - b.y);
-      if (d <= b.r * 1.45 && d < bestDist) {
+      if (d <= b.r * 1.9 && d < bestDist) {
         bestDist = d;
         chosen = b;
       }

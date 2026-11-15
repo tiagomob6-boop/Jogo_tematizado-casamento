@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Operação Lua de Mel 💍 | O Jogo Oficial do Casamento</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,6 +93,34 @@
             <button type="button" class="dpad-btn dpad-burst" data-player="p2" data-action="burst">💐</button>
             <button type="button" class="dpad-btn" data-player="p2" data-dir="1">GIRO ➡️</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Controles Virtuais Adaptativos para Minigames (Mobile / Touch) -->
+      <div id="mg-touch-controls" class="hidden">
+        <!-- Joystick Virtual (Roguelite, Plataforma, Contra) -->
+        <div id="mg-joystick-zone" class="mg-joystick-zone hidden">
+          <div id="mg-joystick-base" class="mg-joystick-base">
+            <div id="mg-joystick-knob" class="mg-joystick-knob"></div>
+          </div>
+        </div>
+
+        <!-- Setas Esquerda / Direita (Top Gear, Louça) -->
+        <div id="mg-dpad-lr" class="mg-dpad-lr hidden">
+          <button type="button" id="mg-btn-left" class="mg-touch-btn mg-dir-btn">⬅️</button>
+          <button type="button" id="mg-btn-right" class="mg-touch-btn mg-dir-btn">➡️</button>
+        </div>
+
+        <!-- Botões de Ação / Pulo / Nitro (Direita) -->
+        <div id="mg-action-cluster" class="mg-action-cluster hidden">
+          <button type="button" id="mg-btn-action" class="mg-touch-btn mg-act-btn">🔥 AÇÃO</button>
+          <button type="button" id="mg-btn-jump" class="mg-touch-btn mg-jump-btn">⬆️ PULAR</button>
+        </div>
+
+        <!-- Modo 2 Jogadores Mesmo Celular (Jump King, Flappy Duplo, Colar na Prova) -->
+        <div id="mg-dual-btns" class="mg-dual-btns hidden">
+          <button type="button" id="mg-btn-p1-act" class="mg-touch-btn mg-p1-btn">🤵 NOIVO: PULAR</button>
+          <button type="button" id="mg-btn-p2-act" class="mg-touch-btn mg-p2-btn">👰 NOIVA: PULAR</button>
         </div>
       </div>
     </div>
@@ -196,7 +224,11 @@
             <div id="host-room-info" class="room-code-box hidden">
               <span class="room-label">CÓDIGO DA SALA:</span>
               <div id="display-room-code" class="room-code-digits">----</div>
-              <p id="host-status-text" class="status-pill waiting">⏳ Aguardando o par entrar...</p>
+              <p id="host-status-text" class="status-pill waiting">⏳ Gerando sala...</p>
+              <div id="host-ready-actions" class="host-ready-actions hidden">
+                <button id="btn-start-online-game" class="btn btn-primary" disabled>🚀 Iniciar Jogo</button>
+                <button id="btn-start-online-minigames" class="btn btn-accent" disabled>🏝️ Escolher Minigame</button>
+              </div>
             </div>
           </div>
 

@@ -436,41 +436,50 @@ function showOverlayScreen(screenName) {
   });
 
   const floatingMute = document.getElementById('btn-mute-floating');
+  const mgTouchControls = document.getElementById('mg-touch-controls');
 
   if (screenName === 'menu') {
     screenMenu.classList.remove('hidden');
     hudBar.classList.add('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.remove('hidden');
   } else if (screenName === 'online') {
     screenOnline.classList.remove('hidden');
     hudBar.classList.add('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.remove('hidden');
   } else if (screenName === 'transition') {
     screenTransition.classList.remove('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.add('hidden');
   } else if (screenName === 'batatinha') {
     screenBatatinha.classList.remove('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.add('hidden');
   } else if (screenName === 'victory') {
     screenVictory.classList.remove('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.add('hidden');
   } else if (screenName === 'minigames') {
     if (screenMinigames) screenMinigames.classList.remove('hidden');
     hudBar.classList.add('hidden');
     touchOverlay.classList.add('hidden');
+    if (mgTouchControls) mgTouchControls.classList.add('hidden');
     floatingMute.classList.remove('hidden');
   } else {
     // Jogando Fase 1, Fase 2 ou Minigames
     hudBar.classList.remove('hidden');
     if (progression.activeMinigame) {
       touchOverlay.classList.add('hidden');
+      updateMinigameTouchUI(progression.activeMinigame);
     } else {
       touchOverlay.classList.remove('hidden');
+      if (mgTouchControls) mgTouchControls.classList.add('hidden');
     }
     floatingMute.classList.add('hidden');
   }
@@ -485,16 +494,83 @@ function updateTouchControlsUI(phase) {
     phase2Prompts.forEach((el) => el.classList.remove('hidden'));
   }
 
-  // No modo Online (2 aparelhos), destaca o lado do jogador atual
+  touchOverlay.classList.remove('single-player-touch');
+  touchZoneLeft.classList.remove('hidden-zone', 'active-single-zone');
+  touchZoneRight.classList.remove('hidden-zone', 'active-single-zone');
+  touchZoneLeft.style.opacity = '1';
+  touchZoneRight.style.opacity = '1';
+
+  // No modo 2 Celulares (host/guest), expande os controles do jogador daquele aparelho na tela inteira
   if (state.mode === 'host') {
-    touchZoneLeft.style.opacity = '1';
-    touchZoneRight.style.opacity = '0.35';
+    touchOverlay.classList.add('single-player-touch');
+    touchZoneLeft.classList.add('active-single-zone');
+    touchZoneRight.classList.add('hidden-zone');
   } else if (state.mode === 'guest') {
-    touchZoneLeft.style.opacity = '0.35';
-    touchZoneRight.style.opacity = '1';
-  } else {
-    touchZoneLeft.style.opacity = '1';
-    touchZoneRight.style.opacity = '1';
+    touchOverlay.classList.add('single-player-touch');
+    touchZoneRight.classList.add('active-single-zone');
+    touchZoneLeft.classList.add('hidden-zone');
+  }
+}
+
+function updateMinigameTouchUI(mg) {
+  const mgTouch = document.getElementById('mg-touch-controls');
+  if (!mgTouch || !mg) return;
+
+  const joyZone = document.getElementById('mg-joystick-zone');
+  const dpadLR = document.getElementById('mg-dpad-lr');
+  const actCluster = document.getElementById('mg-action-cluster');
+  const dualBtns = document.getElementById('mg-dual-btns');
+  const btnAction = document.getElementById('mg-btn-action');
+  const btnJump = document.getElementById('mg-btn-jump');
+  const btnP1Act = document.getElementById('mg-btn-p1-act');
+  const btnP2Act = document.getElementById('mg-btn-p2-act');
+
+  [joyZone, dpadLR, actCluster, dualBtns].forEach((el) => {
+    if (el) el.classList.add('hidden');
+  });
+
+  const id = mg.id;
+  // Jogos de arrasto direto no canvas (Sinuca, IA, Torre, Futebol de Botão) não usam overlay
+  if (['mg1_sinuca', 'mg10_ia', 'mg11_torre', 'mg12_futebol_botao'].includes(id)) {
+    mgTouch.classList.add('hidden');
+    return;
+  }
+
+  mgTouch.classList.remove('hidden');
+
+  if (['mg2_roguelite', 'mg3_plataforma', 'mg4_contra'].includes(id)) {
+    if (joyZone) joyZone.classList.remove('hidden');
+    if (actCluster) actCluster.classList.remove('hidden');
+    if (btnAction) {
+      btnAction.classList.toggle('hidden', id === 'mg3_plataforma');
+      btnAction.textContent = id === 'mg2_roguelite' ? '💥 ESPECIAL' : '🔥 ATIRAR';
+    }
+    if (btnJump) {
+      btnJump.classList.toggle('hidden', id === 'mg2_roguelite');
+      btnJump.textContent = '⬆️ PULAR';
+    }
+  } else if (['mg6_louca', 'mg8_topgear'].includes(id)) {
+    if (dpadLR) dpadLR.classList.remove('hidden');
+    if (actCluster) actCluster.classList.remove('hidden');
+    if (btnJump) btnJump.classList.add('hidden');
+    if (btnAction) {
+      btnAction.classList.remove('hidden');
+      btnAction.textContent = id === 'mg8_topgear' ? '🔥 NITRO' : '🧼 AÇÃO';
+    }
+  } else if (['mg5_jumpking', 'mg7_flappy', 'mg9_colar'].includes(id)) {
+    if (state.mode === 'local') {
+      if (dualBtns) dualBtns.classList.remove('hidden');
+      const label = id === 'mg9_colar' ? 'COLAR' : id === 'mg7_flappy' ? 'VOAR' : 'PULAR';
+      if (btnP1Act) btnP1Act.textContent = `🤵 ${state.groomName.slice(0, 8)}: ${label}`;
+      if (btnP2Act) btnP2Act.textContent = `👰 ${state.brideName.slice(0, 8)}: ${label}`;
+    } else {
+      if (actCluster) actCluster.classList.remove('hidden');
+      if (btnAction) btnAction.classList.add('hidden');
+      if (btnJump) {
+        btnJump.classList.remove('hidden');
+        btnJump.textContent = id === 'mg9_colar' ? '📝 COLAR' : id === 'mg7_flappy' ? '🕊️ VOAR' : '⬆️ PULAR';
+      }
+    }
   }
 }
 
@@ -1209,7 +1285,10 @@ window.addEventListener('keyup', (e) => {
   if (code === 'ArrowRight') state.keys.p2Right = false;
 });
 
-// Eventos de Ponteiro (Mouse & Touch direto no Canvas para os Minigames)
+// Eventos de Ponteiro Unificados (Mouse & Touch direto no Canvas com setPointerCapture)
+let activeCanvasPointerId = null;
+let lastNetMoveSentAt = 0;
+
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = state.width / (rect.width || 1);
@@ -1222,6 +1301,10 @@ function getCanvasCoords(clientX, clientY) {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!progression.activeMinigame) return;
+  if (activeCanvasPointerId !== null && activeCanvasPointerId !== e.pointerId) return;
+  activeCanvasPointerId = e.pointerId;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+
   const coords = getCanvasCoords(e.clientX, e.clientY);
   if (progression.activeMinigame.onPointerDown) {
     progression.activeMinigame.onPointerDown(coords.x, coords.y, ctxApi);
@@ -1233,16 +1316,29 @@ canvas.addEventListener('pointerdown', (e) => {
 
 canvas.addEventListener('pointermove', (e) => {
   if (!progression.activeMinigame) return;
+  if (activeCanvasPointerId !== null && activeCanvasPointerId !== e.pointerId) return;
   const coords = getCanvasCoords(e.clientX, e.clientY);
   if (progression.activeMinigame.onPointerMove) {
     progression.activeMinigame.onPointerMove(coords.x, coords.y, ctxApi);
   }
-  if (state.mode === 'guest' || state.mode === 'host') {
-    net.send({ type: 'mg_pointer_move', x: coords.x, y: coords.y });
+  if ((state.mode === 'guest' || state.mode === 'host') && activeCanvasPointerId === e.pointerId) {
+    const nowMs = performance.now();
+    if (nowMs - lastNetMoveSentAt >= 28) {
+      lastNetMoveSentAt = nowMs;
+      net.send({ type: 'mg_pointer_move', x: coords.x, y: coords.y });
+    }
   }
 });
 
-const handleCanvasPointerRelease = () => {
+const handleCanvasPointerRelease = (e) => {
+  if (e && activeCanvasPointerId !== null && e.pointerId !== undefined && e.pointerId !== activeCanvasPointerId) {
+    return;
+  }
+  if (activeCanvasPointerId !== null) {
+    try { canvas.releasePointerCapture(activeCanvasPointerId); } catch (_) {}
+  }
+  activeCanvasPointerId = null;
+
   if (!progression.activeMinigame) return;
   if (progression.activeMinigame.onPointerUp) {
     progression.activeMinigame.onPointerUp(ctxApi);
@@ -1252,6 +1348,8 @@ const handleCanvasPointerRelease = () => {
   }
 };
 
+canvas.addEventListener('pointerup', handleCanvasPointerRelease);
+canvas.addEventListener('pointercancel', handleCanvasPointerRelease);
 window.addEventListener('pointerup', handleCanvasPointerRelease);
 window.addEventListener('pointercancel', handleCanvasPointerRelease);
 
@@ -1299,12 +1397,13 @@ touchZoneRight.addEventListener('pointerdown', (e) => {
 touchZoneRight.addEventListener('pointerup', () => touchZoneRight.classList.remove('active-press'));
 touchZoneRight.addEventListener('pointercancel', () => touchZoneRight.classList.remove('active-press'));
 
-// Botões Mobile da Fase 1 (Pular / Abaixar) e Fase 2 (Giro / Buquê)
+// Botões Mobile da Fase 1 (Pular / Abaixar) e Fase 2 (Giro / Buquê) com Multi-Touch Real
 document.querySelectorAll('.dpad-btn').forEach((btn) => {
   const rawPlayer = btn.dataset.player; // 'p1' ou 'p2'
   const dir = parseInt(btn.dataset.dir || '0', 10);
   const action = btn.dataset.action;
   const p1Action = btn.dataset.p1action; // 'jump' ou 'duck'
+  let btnPointerId = null;
 
   const setDirState = (isDown) => {
     const p = state.mode === 'host' ? 'p1' : state.mode === 'guest' ? 'p2' : rawPlayer;
@@ -1334,18 +1433,213 @@ document.querySelectorAll('.dpad-btn').forEach((btn) => {
 
   btn.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
+    e.preventDefault();
+    if (btnPointerId !== null) return;
+    btnPointerId = e.pointerId;
+    try { btn.setPointerCapture(e.pointerId); } catch (_) {}
     btn.classList.add('pressed');
     setDirState(true);
   });
+
   const release = (e) => {
+    if (btnPointerId === null || (e && e.pointerId !== undefined && e.pointerId !== btnPointerId)) return;
     e.stopPropagation();
+    try { btn.releasePointerCapture(btnPointerId); } catch (_) {}
+    btnPointerId = null;
     btn.classList.remove('pressed');
     setDirState(false);
   };
   btn.addEventListener('pointerup', release);
   btn.addEventListener('pointercancel', release);
-  btn.addEventListener('pointerleave', release);
 });
+
+// ============================================================================
+// CONTROLES VIRTUAIS ADAPTATIVOS PARA MINIGAMES (JOYSTICK + BOTÕES MULTI-TOUCH)
+// ============================================================================
+(function setupAdaptiveMinigameTouch() {
+  const joyZone = document.getElementById('mg-joystick-zone');
+  const joyKnob = document.getElementById('mg-joystick-knob');
+  const btnLeft = document.getElementById('mg-btn-left');
+  const btnRight = document.getElementById('mg-btn-right');
+  const btnJump = document.getElementById('mg-btn-jump');
+  const btnAction = document.getElementById('mg-btn-action');
+  const btnP1Act = document.getElementById('mg-btn-p1-act');
+  const btnP2Act = document.getElementById('mg-btn-p2-act');
+
+  const sendVirtualKey = (code, isDown) => {
+    if (!progression.activeMinigame) return;
+    if (isDown && progression.activeMinigame.onKeyDown) {
+      progression.activeMinigame.onKeyDown(code, ctxApi);
+    } else if (!isDown && progression.activeMinigame.onKeyUp) {
+      progression.activeMinigame.onKeyUp(code, ctxApi);
+    }
+    if (state.mode === 'guest' || state.mode === 'host') {
+      net.send({ type: 'mg_key_event', code, isDown });
+    }
+  };
+
+  const applyDirToActivePlayer = (left, right, up, down) => {
+    if (state.mode === 'guest') {
+      state.keys.p2Left = left;
+      state.keys.p2Right = right;
+      state.keys.p2Up = up;
+      state.keys.p2Down = down;
+      net.send({ type: 'guest_keys', left, right, up, down });
+    } else {
+      state.keys.p1Left = left;
+      state.keys.p1Right = right;
+      state.keys.p1Up = up;
+      state.keys.p1Down = down;
+    }
+  };
+
+  // 1. Joystick Virtual Analógico
+  if (joyZone && joyKnob) {
+    let joyPointerId = null;
+    const maxRadius = 38;
+
+    const updateJoy = (clientX, clientY) => {
+      const rect = joyZone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      let dx = clientX - cx;
+      let dy = clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist > maxRadius) {
+        dx = (dx / dist) * maxRadius;
+        dy = (dy / dist) * maxRadius;
+      }
+      joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+
+      const thresh = 12;
+      applyDirToActivePlayer(dx < -thresh, dx > thresh, dy < -thresh, dy > thresh);
+    };
+
+    const resetJoy = (e) => {
+      if (joyPointerId === null || (e && e.pointerId !== undefined && e.pointerId !== joyPointerId)) return;
+      try { joyZone.releasePointerCapture(joyPointerId); } catch (_) {}
+      joyPointerId = null;
+      joyKnob.style.transform = 'translate(0px, 0px)';
+      applyDirToActivePlayer(false, false, false, false);
+    };
+
+    joyZone.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (joyPointerId !== null) return;
+      joyPointerId = e.pointerId;
+      try { joyZone.setPointerCapture(e.pointerId); } catch (_) {}
+      updateJoy(e.clientX, e.clientY);
+    });
+    joyZone.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== joyPointerId) return;
+      updateJoy(e.clientX, e.clientY);
+    });
+    joyZone.addEventListener('pointerup', resetJoy);
+    joyZone.addEventListener('pointercancel', resetJoy);
+  }
+
+  // Helper para botões virtuais multi-touch com pointerId
+  const bindTouchHoldBtn = (el, onDown, onUp) => {
+    if (!el) return;
+    let pid = null;
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pid !== null) return;
+      pid = e.pointerId;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      el.classList.add('pressed');
+      if (onDown) onDown();
+    });
+    const rel = (e) => {
+      if (pid === null || (e && e.pointerId !== undefined && e.pointerId !== pid)) return;
+      e.stopPropagation();
+      try { el.releasePointerCapture(pid); } catch (_) {}
+      pid = null;
+      el.classList.remove('pressed');
+      if (onUp) onUp();
+    };
+    el.addEventListener('pointerup', rel);
+    el.addEventListener('pointercancel', rel);
+  };
+
+  bindTouchHoldBtn(btnLeft,
+    () => {
+      if (state.mode === 'guest') { state.keys.p2Left = true; net.send({ type: 'guest_keys', left: true, right: state.keys.p2Right }); }
+      else state.keys.p1Left = true;
+    },
+    () => {
+      if (state.mode === 'guest') { state.keys.p2Left = false; net.send({ type: 'guest_keys', left: false, right: state.keys.p2Right }); }
+      else state.keys.p1Left = false;
+    }
+  );
+
+  bindTouchHoldBtn(btnRight,
+    () => {
+      if (state.mode === 'guest') { state.keys.p2Right = true; net.send({ type: 'guest_keys', left: state.keys.p2Left, right: true }); }
+      else state.keys.p1Right = true;
+    },
+    () => {
+      if (state.mode === 'guest') { state.keys.p2Right = false; net.send({ type: 'guest_keys', left: state.keys.p2Left, right: false }); }
+      else state.keys.p1Right = false;
+    }
+  );
+
+  bindTouchHoldBtn(btnJump,
+    () => {
+      const code = state.mode === 'guest' ? 'ArrowUp' : 'KeyW';
+      if (state.mode === 'guest') state.keys.p2Up = true;
+      else state.keys.p1Up = true;
+      sendVirtualKey(code, true);
+    },
+    () => {
+      const code = state.mode === 'guest' ? 'ArrowUp' : 'KeyW';
+      if (state.mode === 'guest') state.keys.p2Up = false;
+      else state.keys.p1Up = false;
+      sendVirtualKey(code, false);
+    }
+  );
+
+  bindTouchHoldBtn(btnAction,
+    () => {
+      const code = state.mode === 'guest' ? 'Space' : 'KeyF';
+      if (state.mode === 'guest') state.keys.p2Jump = true;
+      else state.keys.p1Jump = true;
+      sendVirtualKey(code, true);
+      sendVirtualKey('Space', true);
+    },
+    () => {
+      const code = state.mode === 'guest' ? 'Space' : 'KeyF';
+      if (state.mode === 'guest') state.keys.p2Jump = false;
+      else state.keys.p1Jump = false;
+      sendVirtualKey(code, false);
+      sendVirtualKey('Space', false);
+    }
+  );
+
+  bindTouchHoldBtn(btnP1Act,
+    () => {
+      state.keys.p1Up = true;
+      sendVirtualKey('KeyW', true);
+    },
+    () => {
+      state.keys.p1Up = false;
+      sendVirtualKey('KeyW', false);
+    }
+  );
+
+  bindTouchHoldBtn(btnP2Act,
+    () => {
+      state.keys.p2Up = true;
+      sendVirtualKey('ArrowUp', true);
+    },
+    () => {
+      state.keys.p2Up = false;
+      sendVirtualKey('ArrowUp', false);
+    }
+  );
+})();
 
 // ============================================================================
 // LÓGICA DA FASE 1: CORRIDA PARA O ALTAR
@@ -1956,7 +2250,10 @@ net.onData = (data) => {
       if (state.mode === 'host' && data.brideName) {
         inputBride.value = data.brideName;
         syncCoupleNamesFromInputs();
-        startPhase1(false);
+        const hostStatus = document.getElementById('host-status-text');
+        if (hostStatus && net.isReady()) {
+          hostStatus.textContent = `✅ ${state.brideName} conectada! Clique em Iniciar Jogo!`;
+        }
       }
       break;
 
@@ -1981,8 +2278,10 @@ net.onData = (data) => {
 
     case 'guest_keys':
       if (state.mode === 'host') {
-        state.keys.p2Left = !!data.left;
-        state.keys.p2Right = !!data.right;
+        if (data.left !== undefined) state.keys.p2Left = !!data.left;
+        if (data.right !== undefined) state.keys.p2Right = !!data.right;
+        if (data.up !== undefined) state.keys.p2Up = !!data.up;
+        if (data.down !== undefined) state.keys.p2Down = !!data.down;
       }
       break;
 
@@ -2098,6 +2397,10 @@ net.onData = (data) => {
       }
       break;
 
+    case 'open_minigames_hub':
+      openMinigamesHub();
+      break;
+
     case 'request_start_stage':
       if (state.mode === 'host' && data.stageId) {
         startStageById(data.stageId, false);
@@ -2146,19 +2449,42 @@ net.onData = (data) => {
   }
 };
 
+net.onStatusChange = (statusMsg, phase, role) => {
+  const hostStatus = document.getElementById('host-status-text');
+  const guestStatus = document.getElementById('guest-status-text');
+  if (role === 'host' && hostStatus) {
+    hostStatus.textContent = statusMsg;
+    hostStatus.className = `status-pill ${phase === 'ready' ? 'ready' : 'waiting'}`;
+  } else if (role === 'guest' && guestStatus) {
+    guestStatus.classList.remove('hidden');
+    guestStatus.textContent = statusMsg;
+    guestStatus.className = `status-pill ${phase === 'ready' ? 'ready' : 'waiting'}`;
+  }
+};
+
 net.onConnected = (role, code) => {
   syncCoupleNamesFromInputs();
   if (role === 'guest') {
     const guestStatus = document.getElementById('guest-status-text');
     guestStatus.classList.remove('hidden');
-    guestStatus.textContent = `✅ Conectado à sala ${code}! Iniciando...`;
+    guestStatus.className = 'status-pill ready';
+    guestStatus.textContent = `✅ Conectado à sala ${code}! Aguardando ${state.groomName} iniciar...`;
     net.send({
       type: 'hello_names',
       brideName: state.brideName
     });
   } else if (role === 'host') {
     const hostStatus = document.getElementById('host-status-text');
-    hostStatus.textContent = '✅ Par conectado! Partida iniciando...';
+    const readyActions = document.getElementById('host-ready-actions');
+    const btnStartGame = document.getElementById('btn-start-online-game');
+    const btnStartMgs = document.getElementById('btn-start-online-minigames');
+    if (hostStatus) {
+      hostStatus.className = 'status-pill ready';
+      hostStatus.textContent = '✅ Conectado! Parceiro pronto na sala!';
+    }
+    if (readyActions) readyActions.classList.remove('hidden');
+    if (btnStartGame) btnStartGame.disabled = false;
+    if (btnStartMgs) btnStartMgs.disabled = false;
   }
 };
 
@@ -2166,9 +2492,13 @@ net.onError = (msg) => {
   const hostStatus = document.getElementById('host-status-text');
   const guestStatus = document.getElementById('guest-status-text');
   if (net.role === 'host') {
-    hostStatus.textContent = '⚠️ ' + msg;
-  } else {
+    if (hostStatus) {
+      hostStatus.className = 'status-pill error';
+      hostStatus.textContent = '⚠️ ' + msg;
+    }
+  } else if (guestStatus) {
     guestStatus.classList.remove('hidden');
+    guestStatus.className = 'status-pill error';
     guestStatus.textContent = '⚠️ ' + msg;
   }
 };
@@ -3119,25 +3449,57 @@ document.getElementById('btn-create-room').addEventListener('click', () => {
   const infoBox = document.getElementById('host-room-info');
   const codeDisplay = document.getElementById('display-room-code');
   const statusText = document.getElementById('host-status-text');
+  const readyActions = document.getElementById('host-ready-actions');
+  const btnStartGame = document.getElementById('btn-start-online-game');
+  const btnStartMgs = document.getElementById('btn-start-online-minigames');
 
   infoBox.classList.remove('hidden');
+  if (readyActions) readyActions.classList.add('hidden');
+  if (btnStartGame) btnStartGame.disabled = true;
+  if (btnStartMgs) btnStartMgs.disabled = true;
   codeDisplay.textContent = '....';
-  statusText.textContent = '⏳ Gerando sala P2P...';
+  statusText.className = 'status-pill waiting';
+  statusText.textContent = '⏳ Gerando sala...';
 
   net.createRoom((shortCode) => {
     codeDisplay.textContent = shortCode;
-    statusText.textContent = `⏳ Sala criada! Peça para o Jogador 2 digitar ${shortCode}`;
+    statusText.textContent = `⏳ Aguardando parceiro! Código: ${shortCode}`;
   });
 });
+
+// Botões: Iniciar Jogo ou Minigames Online (liberados só após HELLO handshake)
+const btnStartOnlineGame = document.getElementById('btn-start-online-game');
+if (btnStartOnlineGame) {
+  btnStartOnlineGame.addEventListener('click', () => {
+    if (!net.isReady()) return;
+    sfx.init();
+    sfx.playClick();
+    startPhase1(false);
+  });
+}
+
+const btnStartOnlineMinigames = document.getElementById('btn-start-online-minigames');
+if (btnStartOnlineMinigames) {
+  btnStartOnlineMinigames.addEventListener('click', () => {
+    if (!net.isReady()) return;
+    sfx.init();
+    sfx.playClick();
+    openMinigamesHub();
+    net.send({ type: 'open_minigames_hub' });
+  });
+}
 
 // Botão: Entrar na Sala (Guest / Jogador 2)
 document.getElementById('btn-join-room').addEventListener('click', () => {
   sfx.init();
   sfx.playClick();
-  const rawCode = document.getElementById('input-room-code').value;
+  const roomInput = document.getElementById('input-room-code');
+  const rawCode = (roomInput.value || '').trim().toUpperCase();
+  roomInput.value = rawCode;
   const guestStatus = document.getElementById('guest-status-text');
   guestStatus.classList.remove('hidden');
-  guestStatus.textContent = '⏳ Conectando à sala...';
+  guestStatus.className = 'status-pill waiting';
+  guestStatus.textContent = '⏳ Conectando...';
   state.mode = 'guest';
   net.joinRoom(rawCode);
 });
